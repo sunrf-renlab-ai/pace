@@ -30,7 +30,10 @@ func New(claudePath string, extra map[string]string) *Brain {
 	if claudePath == "" {
 		claudePath = "claude"
 	}
-	return &Brain{ClaudePath: claudePath, ExtraEnv: extra, Timeout: 60 * time.Second}
+	// Mentor mode (R11/R15/cli:ask/review/consult) often reads files and runs
+	// an adversarial pass — easily 1-3 minutes. Reactive decisions are <30s.
+	// One generous timeout covers both.
+	return &Brain{ClaudePath: claudePath, ExtraEnv: extra, Timeout: 5 * time.Minute}
 }
 
 func (b *Brain) Decide(ctx context.Context, in loop.DeciderInput) (*loop.Decision, error) {

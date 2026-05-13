@@ -41,6 +41,7 @@ func NewRegistry(n Notifier) *Registry {
 	r.executors["pause_project"] = PauseProjectExec{}
 	r.executors["set_pref"] = SetPrefExec{}
 	r.executors["generate_plan"] = GeneratePlanExec{}
+	r.executors["mentor_review"] = MentorReviewExec{N: n}
 	return r
 }
 

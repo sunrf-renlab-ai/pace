@@ -53,8 +53,16 @@ func main() {
 		runGoal(os.Args[2:])
 	case "goals":
 		runGoals()
+	case "mentor":
+		runMentor(os.Args[2:])
+	case "ask":
+		runAsk(os.Args[2:])
+	case "review":
+		runReview(os.Args[2:])
+	case "consult":
+		runConsult(os.Args[2:])
 	case "version":
-		fmt.Println("pace v0.3.0")
+		fmt.Println("pace v0.4.0")
 	case "help", "-h", "--help":
 		printHelp()
 	default:
@@ -103,6 +111,16 @@ PROJECT MANAGEMENT (v0.3)
                           [--deadline DATE]
   pace goal <project> --delete             remove a goal
   pace goals                               list all goals (alias)
+
+MENTOR (v0.4) — evidence-grounded opinions, two-pass adversarial
+  pace mentor                              list open opinions (unack'd)
+  pace mentor all                          list all opinions
+  pace mentor ack <id>                     mark an opinion acknowledged
+  pace mentor dismiss <id>                 dismiss an opinion
+  pace ask "<question>"                    ask the mentor anything (a few seconds)
+  pace review [<commit-sha>]               review HEAD (or sha) of cwd
+                  [--project <path>]
+  pace consult <project-path>              deep-dive on a whole project (~30s, costs tokens)
 
 DATE format: YYYY-MM-DD or full RFC3339.
 

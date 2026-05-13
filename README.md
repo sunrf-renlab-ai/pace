@@ -9,7 +9,7 @@
 
 Everything is logged. Anything can be undone.
 
-**Status:** alpha (v0.3). 6 rules, LLM brain, OAuth login (optional — Pace inherits your existing `claude` CLI auth via subprocess), per-project goals, focus declarations, and morning plan generation.
+**Status:** alpha (v0.4). 8 rules, LLM brain in three modes (reactive / proactive PM / **mentor**), per-project goals + focus + plans, two-pass adversarial code review producing evidence-grounded opinions you can ack or dismiss. OAuth login optional — Pace inherits your existing `claude` CLI auth via subprocess.
 
 ---
 
@@ -99,6 +99,16 @@ pace goal <project> --delete             remove a goal
 pace goals                               alias for `pace goal`
 
 pace version                             print version
+
+# mentor (v0.4) — evidence-grounded opinions
+pace mentor                              list open opinions
+pace mentor all                          list all opinions (incl ack'd/dismissed)
+pace mentor ack <id>                     mark opinion acknowledged
+pace mentor dismiss <id>                 dismiss opinion
+pace ask "<question>"                    ask the mentor anything
+pace review [<commit-sha>]               code-review HEAD (or sha) of cwd
+              [--project <path>]
+pace consult <project-path>              deep-dive on a project
 ```
 
 ## Auth
@@ -116,18 +126,51 @@ Pace scans every project where a Claude session has run. The first event from a 
 
 You can pause a project (`pace pause <path>`) to suppress notifications for it, or `pace pause <path> --until 2026-06-13` to set a date.
 
-## Rules (v0.3)
+## Rules (v0.4)
 
-| Rule | Fires when |
-|------|-----------|
-| **R1** Tool error burst | Same session, 2+ tool errors within 5 minutes |
-| **R2** Test fail | A test command (`go test`, `npm test`, `pytest`, …) exited non-zero |
-| **R3** Deploy fail | A deploy command (`vercel deploy`, `fly deploy`, …) exited non-zero |
-| **R8** Periodic overview | Every 30 minutes, a "any blind spots?" sweep |
-| **R9** Morning standup | Once per day at 09:00 local — brain generates today's plan |
-| **R10** Focus drift | You declared focus on A, but the past hour has 3× more activity on B |
+| Rule | Mode | Fires when |
+|------|------|-----------|
+| **R1** Tool error burst | reactive | Same session, 2+ tool errors within 5 min |
+| **R2** Test fail | reactive | A test command (`go test`, `npm test`, `pytest`, …) exited non-zero |
+| **R3** Deploy fail | reactive | A deploy command (`vercel deploy`, `fly deploy`, …) exited non-zero |
+| **R8** Periodic overview | reactive | Every 30 min, "any blind spots?" sweep |
+| **R9** Morning standup | proactive PM | Once per day at 09:00 local — brain generates today's plan |
+| **R10** Focus drift | proactive PM | You declared focus on A, but the past hour has 3× more activity on B |
+| **R11** Commit review | **mentor** | Substantial commit detected (>5 files or >200 LOC) — triggers code review |
+| **R15** Mentor pulse | **mentor** | Every 2 hours, strategic review across all projects |
 
-R4–R7 (cross-project schema drift, stale uncommitted changes, etc.) are roadmap.
+R4–R7 + R12-R14 (cross-project schema drift, stale uncommitted, new abstraction nudge, etc.) are roadmap.
+
+## Mentor mode (v0.4)
+
+Pace is also your senior engineer. When R11/R15 fire (or you ask via CLI), brain runs in **mentor mode** with a stricter contract:
+
+1. **Initial review** — brain reads the trigger context, may use file tools to read code, and lists 1-5 candidate observations. Each has: topic, observation (with evidence), concern, recommendation, confidence label, evidence refs.
+2. **Adversarial pass** — brain plays devil's advocate against each candidate: is this a nitpick? Does the recommendation make code worse? Did I miss context? Am I just pattern-matching?
+3. **Output only the survivors** — better to surface 1 strong opinion than 5 weak ones. If everything got challenged out, output zero opinions and explain in rationale.
+
+```bash
+# Ask anything, get a calibrated opinion in seconds
+pace ask "Should I extract this duplication or YAGNI it for now?"
+
+# Code review HEAD (or specific sha) of cwd
+pace review
+pace review abc1234
+
+# Deep-dive on a project (~30s, costs more tokens)
+pace consult ~/project/pair
+
+# Inbox of mentor's open opinions
+pace mentor
+pace mentor ack <id>      # I read it, accept the point
+pace mentor dismiss <id>  # I disagree / not relevant
+```
+
+**Reliability mechanisms:**
+- Every opinion cites specific file:line, commit SHA, function names — no vague references
+- Confidence labels (high/medium/low) — brain can also refuse to opine if context is insufficient
+- Brain sees its own past opinions and won't re-raise the same one
+- Stored in `mentor_opinions` table so you can compare opinions over time, see which ones panned out
 
 ## Project management
 

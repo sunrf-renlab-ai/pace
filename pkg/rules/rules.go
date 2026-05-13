@@ -30,6 +30,8 @@ func All() []Rule {
 		&R8PeriodicOverview{},
 		&R9MorningStandup{},
 		&R10FocusDrift{},
+		&R11CommitReview{},
+		&R15MentorPulse{},
 	}
 }
 

@@ -114,8 +114,4 @@ func TestR10HasCooldown(t *testing.T) {
 	}
 }
 
-func TestAllReturnsSixRules(t *testing.T) {
-	if got := len(All()); got != 6 {
-		t.Errorf("All() = %d rules, want 6", got)
-	}
-}
+// All-count assertion lives in r11_r15_test.go now (8 rules in v0.4).

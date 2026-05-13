@@ -8,6 +8,7 @@ import (
 
 	"github.com/sunrf-renlab-ai/pace/pkg/action"
 	"github.com/sunrf-renlab-ai/pace/pkg/ipc"
+	"github.com/sunrf-renlab-ai/pace/pkg/mentor"
 	"github.com/sunrf-renlab-ai/pace/pkg/pm"
 )
 
@@ -240,4 +241,141 @@ func (r *rpc) planGenerate(req ipc.Request) ipc.Response {
 	}
 	p, _ := pm.LatestPlan(r.d.State, scope)
 	return ipc.Response{OK: true, Result: p}
+}
+
+// ─── Mentor handlers (v0.4) ────────────────────────────────────────────
+
+func (r *rpc) mentorList(req ipc.Request) ipc.Response {
+	scope, _ := req.Params["scope"].(string) // "open" (default) | "all"
+	limit := 50
+	if v, ok := req.Params["limit"].(float64); ok {
+		limit = int(v)
+	}
+	var ops []mentor.Opinion
+	var err error
+	if scope == "all" {
+		ops, err = mentor.ListAll(r.d.State, limit)
+	} else {
+		ops, err = mentor.ListOpen(r.d.State, limit)
+	}
+	if err != nil {
+		return ipc.Response{OK: false, Error: err.Error()}
+	}
+	return ipc.Response{OK: true, Result: ops}
+}
+
+func (r *rpc) mentorAck(req ipc.Request) ipc.Response {
+	id, _ := req.Params["opinion_id"].(string)
+	if id == "" {
+		return ipc.Response{OK: false, Error: "opinion_id required"}
+	}
+	if err := mentor.Acknowledge(r.d.State, id); err != nil {
+		return ipc.Response{OK: false, Error: err.Error()}
+	}
+	return ipc.Response{OK: true}
+}
+
+func (r *rpc) mentorDismiss(req ipc.Request) ipc.Response {
+	id, _ := req.Params["opinion_id"].(string)
+	if id == "" {
+		return ipc.Response{OK: false, Error: "opinion_id required"}
+	}
+	if err := mentor.Dismiss(r.d.State, id); err != nil {
+		return ipc.Response{OK: false, Error: err.Error()}
+	}
+	return ipc.Response{OK: true}
+}
+
+// mentorAsk: short user question → brain (mentor mode) → opinion saved + returned
+func (r *rpc) mentorAsk(req ipc.Request) ipc.Response {
+	q, _ := req.Params["question"].(string)
+	if q == "" {
+		return ipc.Response{OK: false, Error: "question required"}
+	}
+	if r.d.brain == nil {
+		return ipc.Response{OK: false, Error: "brain offline — install `claude` CLI or run `pace login`"}
+	}
+	in := r.d.loop.BuildChatPromptInput(q)
+	in.TriggerReason = "cli:ask"
+	d, err := r.d.brain.Decide(context.Background(), in)
+	if err != nil {
+		return ipc.Response{OK: false, Error: err.Error()}
+	}
+	// "ignore" with text in rationale = mentor's direct text answer
+	if d.Decision == "ignore" || d.Decision == "" {
+		return ipc.Response{OK: true, Result: map[string]any{"answer": d.Rationale, "saved": false}}
+	}
+	if d.Decision != "mentor_review" {
+		return ipc.Response{OK: false, Error: "brain returned unexpected decision=" + d.Decision}
+	}
+	a := &action.Action{Type: "mentor_review", Rationale: d.Rationale, Params: d.Params}
+	if err := r.d.actions.Run(context.Background(), r.d.State, a); err != nil {
+		return ipc.Response{OK: false, Error: err.Error()}
+	}
+	open, _ := mentor.ListOpen(r.d.State, 5)
+	return ipc.Response{OK: true, Result: map[string]any{
+		"saved":    true,
+		"opinions": open,
+	}}
+}
+
+// mentorReview: manually trigger commit review on a project + optional sha
+func (r *rpc) mentorReview(req ipc.Request) ipc.Response {
+	if r.d.brain == nil {
+		return ipc.Response{OK: false, Error: "brain offline"}
+	}
+	project, _ := req.Params["project_path"].(string)
+	if project == "" {
+		project, _ = req.Params["cwd"].(string)
+	}
+	sha, _ := req.Params["sha"].(string)
+
+	question := "Review the most recent commit in " + project + "."
+	if sha != "" {
+		question = "Review commit " + sha + " in " + project + "."
+	}
+	in := r.d.loop.BuildChatPromptInput(question)
+	in.TriggerReason = "cli:review"
+	d, err := r.d.brain.Decide(context.Background(), in)
+	if err != nil {
+		return ipc.Response{OK: false, Error: err.Error()}
+	}
+	if d.Decision != "mentor_review" {
+		return ipc.Response{OK: true, Result: map[string]any{"answer": d.Rationale, "decision": d.Decision}}
+	}
+	a := &action.Action{Type: "mentor_review", ProjectPath: project, Rationale: d.Rationale, Params: d.Params}
+	if err := r.d.actions.Run(context.Background(), r.d.State, a); err != nil {
+		return ipc.Response{OK: false, Error: err.Error()}
+	}
+	open, _ := mentor.ListOpen(r.d.State, 10)
+	return ipc.Response{OK: true, Result: map[string]any{
+		"opinions": open,
+	}}
+}
+
+// mentorConsult: deep-dive analysis on a project
+func (r *rpc) mentorConsult(req ipc.Request) ipc.Response {
+	if r.d.brain == nil {
+		return ipc.Response{OK: false, Error: "brain offline"}
+	}
+	project, _ := req.Params["project_path"].(string)
+	if project == "" {
+		return ipc.Response{OK: false, Error: "project_path required"}
+	}
+	question := "Deep-dive consult on " + project + ". Read the project structure, recent activity, and the goal. Surface up to 5 distinct opinions covering different topics (architecture, testing, scope drift, risk, missing pieces) — each must survive the adversarial pass."
+	in := r.d.loop.BuildChatPromptInput(question)
+	in.TriggerReason = "cli:consult"
+	d, err := r.d.brain.Decide(context.Background(), in)
+	if err != nil {
+		return ipc.Response{OK: false, Error: err.Error()}
+	}
+	if d.Decision != "mentor_review" {
+		return ipc.Response{OK: true, Result: map[string]any{"answer": d.Rationale}}
+	}
+	a := &action.Action{Type: "mentor_review", ProjectPath: project, Rationale: d.Rationale, Params: d.Params}
+	if err := r.d.actions.Run(context.Background(), r.d.State, a); err != nil {
+		return ipc.Response{OK: false, Error: err.Error()}
+	}
+	open, _ := mentor.ListOpen(r.d.State, 10)
+	return ipc.Response{OK: true, Result: map[string]any{"opinions": open}}
 }

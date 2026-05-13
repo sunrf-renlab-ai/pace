@@ -105,6 +105,13 @@ func Start() (*Daemon, error) {
 		sock.Handle("focus.clear", r.focusClear)
 		sock.Handle("plan.show", r.planShow)
 		sock.Handle("plan.generate", r.planGenerate)
+		// v0.4 mentor handlers
+		sock.Handle("mentor.list", r.mentorList)
+		sock.Handle("mentor.ack", r.mentorAck)
+		sock.Handle("mentor.dismiss", r.mentorDismiss)
+		sock.Handle("mentor.ask", r.mentorAsk)
+		sock.Handle("mentor.review", r.mentorReview)
+		sock.Handle("mentor.consult", r.mentorConsult)
 		go sock.Serve()
 		d.ipc = sock
 	}

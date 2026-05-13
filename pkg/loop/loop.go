@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sunrf-renlab-ai/pace/pkg/action"
+	"github.com/sunrf-renlab-ai/pace/pkg/mentor"
 	"github.com/sunrf-renlab-ai/pace/pkg/pm"
 	"github.com/sunrf-renlab-ai/pace/pkg/rules"
 	"github.com/sunrf-renlab-ai/pace/pkg/state"
@@ -23,6 +24,7 @@ type DeciderInput struct {
 	GoalsJSON         string
 	FocusJSON         string
 	PlansJSON         string
+	OpinionsJSON      string
 	PrefsJSON         string
 	RecentActionsJSON string
 	TriggerReason     string
@@ -127,6 +129,7 @@ func (l *Loop) buildPromptInput(t rules.Trigger) DeciderInput {
 		GoalsJSON:         pm.GoalsJSON(l.State),
 		FocusJSON:         pm.FocusJSON(l.State),
 		PlansJSON:         pm.PlansJSON(l.State, 5),
+		OpinionsJSON:      mentor.OpinionsJSON(l.State, 20),
 		PrefsJSON:         jsonPrefs(l.State),
 		RecentActionsJSON: jsonRecentActions(l.State),
 		TriggerReason:     t.RuleName + ": " + t.Reason,
@@ -142,6 +145,7 @@ func (l *Loop) BuildChatPromptInput(message string) DeciderInput {
 		GoalsJSON:         pm.GoalsJSON(l.State),
 		FocusJSON:         pm.FocusJSON(l.State),
 		PlansJSON:         pm.PlansJSON(l.State, 5),
+		OpinionsJSON:      mentor.OpinionsJSON(l.State, 20),
 		PrefsJSON:         jsonPrefs(l.State),
 		RecentActionsJSON: jsonRecentActions(l.State),
 		TriggerReason:     "user_chat",

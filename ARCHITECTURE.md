@@ -48,17 +48,18 @@ Each Go package has one responsibility. All are independently testable.
 | `pkg/state`      | Opens SQLite + runs embedded migrations. Exposes `*State` to the world. |
 | `pkg/ingest`     | HTTP `/event` endpoint; validates payload, writes to `events` table, upserts `projects`. |
 | `pkg/hook`       | Idempotently merges Pace's hook entries into `~/.claude/settings.json`; respects existing hooks. |
-| `pkg/rules`      | Pure-Go heuristics. Each `Rule.Evaluate(state, now)` returns 0+ `Trigger`s. v0.3 ships R1, R2, R3, R8, R9 (morning standup), R10 (focus drift). |
-| `pkg/brain`      | Spawns `claude -p` with a packaged prompt, parses the JSON `Decision`. Implements `loop.Decider`. The prompt now includes goals + focus + recent plans so brain can do proactive planning, not just reactive triage. |
+| `pkg/rules`      | Pure-Go heuristics. Each `Rule.Evaluate(state, now)` returns 0+ `Trigger`s. v0.4 ships R1, R2, R3, R8, R9, R10, R11 (commit review), R15 (mentor pulse). |
+| `pkg/brain`      | Spawns `claude -p` with a packaged prompt, parses the JSON `Decision`. Implements `loop.Decider`. The prompt has three modes: reactive (R1-3, R8), proactive PM (R9, R10), **mentor** (R11, R15, cli:ask/review/consult) — mentor mode runs an adversarial self-critique pass and outputs only opinions that survive. 5-min subprocess timeout for code-reading reviews. |
 | `pkg/pm`         | v0.3 project-management layer: per-project goals, current focus declaration, generated plan documents. Pure data + persistence — no LLM calls. |
-| `pkg/action`     | Action registry + executors (`notify`, `spawn_session`, `sync_files`, `pause_project`, `set_pref`, `generate_plan`); each action is logged BEFORE it executes so a crash leaves a trace. `generate_plan` writes the plan to `~/.config/pace/plans/<date>-<scope>.md` and to the `plans` table. |
+| `pkg/mentor`     | v0.4 mentor layer: durable structured opinions (observation, concern, recommendation, confidence, evidence refs) with ack/dismiss lifecycle. Pure data + persistence. |
+| `pkg/action`     | Action registry + executors (`notify`, `spawn_session`, `sync_files`, `pause_project`, `set_pref`, `generate_plan`, `mentor_review`); each action logged BEFORE execution. `generate_plan` writes markdown to `~/.config/pace/plans/`. `mentor_review` saves N opinions to `mentor_opinions` and notifies once with a summary. |
 | `pkg/notify`     | OS notification backend (`osascript` on macOS, `notify-send` on Linux). Build tags. |
 | `pkg/loop`       | Glues rules → brain → action with a 30-second ticker. Degrades to direct notify when brain is nil. |
 | `pkg/ipc`        | Unix socket JSON-RPC server + client. CLI talks to daemon over this. |
 | `pkg/oauth`      | Optional PKCE flow against Anthropic OAuth endpoints (env-overridable). Tokens live at `~/.config/pace/auth.json` mode `0600`. |
 | `pkg/tray`       | macOS menubar (`getlantern/systray`); no-op on Linux. |
 | `pkg/daemon`     | Composition root: opens state, binds ephemeral HTTP port, writes the port file, wires loop+brain+actions+IPC. |
-| `cmd/pace`     | CLI: `init`, `login`, `status`, `pause`, `undo`, `actions`, `chat`, plus v0.3 `plan`, `standup`, `focus`, `goal`, `goals`. |
+| `cmd/pace`     | CLI: `init`, `login`, `status`, `pause`, `undo`, `actions`, `chat`, v0.3 `plan`, `standup`, `focus`, `goal`, `goals`, v0.4 `mentor`, `ask`, `review`, `consult`. |
 | `cmd/paced`    | Daemon entrypoint. Calls `daemon.Start()`, runs tray (macOS) or waits on signals. |
 | `cmd/e2e`        | Smoke harness: spins up daemon, posts a synthetic event, verifies it lands in SQLite. |
 
