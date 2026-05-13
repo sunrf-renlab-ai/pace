@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type SetPrefExec struct{}

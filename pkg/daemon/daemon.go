@@ -11,15 +11,15 @@ import (
 
 	"os/exec"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/action"
-	"github.com/sunrf-renlab-ai/mentor/pkg/brain"
-	"github.com/sunrf-renlab-ai/mentor/pkg/ingest"
-	"github.com/sunrf-renlab-ai/mentor/pkg/ipc"
-	"github.com/sunrf-renlab-ai/mentor/pkg/loop"
-	"github.com/sunrf-renlab-ai/mentor/pkg/notify"
-	"github.com/sunrf-renlab-ai/mentor/pkg/oauth"
-	"github.com/sunrf-renlab-ai/mentor/pkg/rules"
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/action"
+	"github.com/sunrf-renlab-ai/pace/pkg/brain"
+	"github.com/sunrf-renlab-ai/pace/pkg/ingest"
+	"github.com/sunrf-renlab-ai/pace/pkg/ipc"
+	"github.com/sunrf-renlab-ai/pace/pkg/loop"
+	"github.com/sunrf-renlab-ai/pace/pkg/notify"
+	"github.com/sunrf-renlab-ai/pace/pkg/oauth"
+	"github.com/sunrf-renlab-ai/pace/pkg/rules"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type Daemon struct {
@@ -38,7 +38,7 @@ func Start() (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg := filepath.Join(home, ".config", "mentor")
+	cfg := filepath.Join(home, ".config", "pace")
 	if err := os.MkdirAll(cfg, 0o755); err != nil {
 		return nil, err
 	}
@@ -118,6 +118,6 @@ func (d *Daemon) Stop() error {
 	d.server.Shutdown(ctx)
 	d.State.Close()
 	home, _ := os.UserHomeDir()
-	os.Remove(filepath.Join(home, ".config", "mentor", "port"))
+	os.Remove(filepath.Join(home, ".config", "pace", "port"))
 	return nil
 }

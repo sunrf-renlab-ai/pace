@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type SyncFilesExec struct{}
@@ -18,7 +18,7 @@ func (SyncFilesExec) Execute(ctx context.Context, s *state.State, a *Action) err
 		return errInvalidParams
 	}
 	home, _ := os.UserHomeDir()
-	dir := filepath.Join(home, ".config", "mentor", "notes")
+	dir := filepath.Join(home, ".config", "pace", "notes")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}

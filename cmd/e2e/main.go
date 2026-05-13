@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/daemon"
+	"github.com/sunrf-renlab-ai/pace/pkg/daemon"
 )
 
 func main() {
-	tmp, _ := os.MkdirTemp("", "mentor-e2e-")
+	tmp, _ := os.MkdirTemp("", "pace-e2e-")
 	defer os.RemoveAll(tmp)
 	os.Setenv("HOME", tmp)
 
@@ -24,7 +24,7 @@ func main() {
 	}
 	defer d.Stop()
 
-	portFile := filepath.Join(tmp, ".config", "mentor", "port")
+	portFile := filepath.Join(tmp, ".config", "pace", "port")
 	deadline := time.Now().Add(2 * time.Second)
 	var port string
 	for time.Now().Before(deadline) {

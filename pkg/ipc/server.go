@@ -18,14 +18,14 @@ type Server struct {
 }
 
 func socketPath() (string, error) {
-	if p := os.Getenv("MENTOR_SOCKET_PATH"); p != "" {
+	if p := os.Getenv("PACE_SOCKET_PATH"); p != "" {
 		return p, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "mentor", "sock"), nil
+	return filepath.Join(home, ".config", "pace", "sock"), nil
 }
 
 func NewServer() (*Server, error) {

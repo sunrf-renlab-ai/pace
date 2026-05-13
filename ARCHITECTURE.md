@@ -1,42 +1,42 @@
 # Architecture
 
-This document is a hands-on tour of how Mentor is wired together. For the design rationale, see `docs/superpowers/specs/2026-05-13-mentor-design.md`.
+This document is a hands-on tour of how Pace is wired together. For the design rationale, see `docs/superpowers/specs/2026-05-13-pace-design.md`.
 
 ## Process model
 
 There are at most two processes:
 
-- **`mentord`** — the daemon. Always running. LaunchAgent on macOS, `systemd --user` on Linux.
-- **`mentor`** — short-lived CLI. Connects to daemon via unix socket. The chat REPL is a `mentor` process.
+- **`paced`** — the daemon. Always running. LaunchAgent on macOS, `systemd --user` on Linux.
+- **`pace`** — short-lived CLI. Connects to daemon via unix socket. The chat REPL is a `pace` process.
 
-The menubar tray on macOS runs inside `mentord` (the systray library requires the main goroutine). On Linux there is no tray; the daemon runs headless.
+The menubar tray on macOS runs inside `paced` (the systray library requires the main goroutine). On Linux there is no tray; the daemon runs headless.
 
 ## Data flow
 
 ```
-~/.claude/settings.json           ── mentor-managed hook entries write events to:
+~/.claude/settings.json           ── pace-managed hook entries write events to:
    ├─ UserPromptSubmit  ─┐
    ├─ PostToolUse       ├──── POST /event → 127.0.0.1:<port>
    └─ Stop              ─┘
                               │
                               ▼
    ┌────────────────────────────────────────────────────────────────────┐
-   │  mentord  (Go single binary)                                       │
+   │  paced  (Go single binary)                                       │
    │                                                                    │
    │   Ingestor  →  Rule gate  →  LLM brain  →  Action executor         │
    │   (HTTP)      (pure Go)     (claude -p   (notify / spawn /         │
    │     │           │           subprocess)   sync / set_pref / etc.)  │
    │     ▼           ▼              ▼              ▲                    │
    │  ┌────────────────────────────────────────┐   │                    │
-   │  │  SQLite (~/.config/mentor/state.db)    │───┘                    │
+   │  │  SQLite (~/.config/pace/state.db)    │───┘                    │
    │  └────────────────────────────────────────┘                        │
    │           ▲                                                        │
-   │           │ unix socket: ~/.config/mentor/sock                     │
+   │           │ unix socket: ~/.config/pace/sock                     │
    │           │ (line-delimited JSON RPC)                              │
    └───────────┼────────────────────────────────────────────────────────┘
                │
                ▼
-          `mentor` CLI (chat, status, pause, undo, actions)
+          `pace` CLI (chat, status, pause, undo, actions)
 ```
 
 ## Modules
@@ -47,28 +47,28 @@ Each Go package has one responsibility. All are independently testable.
 |------------------|-------------|
 | `pkg/state`      | Opens SQLite + runs embedded migrations. Exposes `*State` to the world. |
 | `pkg/ingest`     | HTTP `/event` endpoint; validates payload, writes to `events` table, upserts `projects`. |
-| `pkg/hook`       | Idempotently merges Mentor's hook entries into `~/.claude/settings.json`; respects existing hooks. |
+| `pkg/hook`       | Idempotently merges Pace's hook entries into `~/.claude/settings.json`; respects existing hooks. |
 | `pkg/rules`      | Pure-Go heuristics. Each `Rule.Evaluate(state, now)` returns 0+ `Trigger`s. v0.2 ships R1, R2, R3, R8. |
 | `pkg/brain`      | Spawns `claude -p` with a packaged prompt, parses the JSON `Decision`. Implements `loop.Decider`. |
 | `pkg/action`     | Action registry + executors (`notify`, `spawn_session`, `sync_files`, `pause_project`, `set_pref`); each action is logged BEFORE it executes so a crash leaves a trace. |
 | `pkg/notify`     | OS notification backend (`osascript` on macOS, `notify-send` on Linux). Build tags. |
 | `pkg/loop`       | Glues rules → brain → action with a 30-second ticker. Degrades to direct notify when brain is nil. |
 | `pkg/ipc`        | Unix socket JSON-RPC server + client. CLI talks to daemon over this. |
-| `pkg/oauth`      | Optional PKCE flow against Anthropic OAuth endpoints (env-overridable). Tokens live at `~/.config/mentor/auth.json` mode `0600`. |
+| `pkg/oauth`      | Optional PKCE flow against Anthropic OAuth endpoints (env-overridable). Tokens live at `~/.config/pace/auth.json` mode `0600`. |
 | `pkg/tray`       | macOS menubar (`getlantern/systray`); no-op on Linux. |
 | `pkg/daemon`     | Composition root: opens state, binds ephemeral HTTP port, writes the port file, wires loop+brain+actions+IPC. |
-| `cmd/mentor`     | CLI: `init`, `login`, `status`, `pause`, `undo`, `actions`, `chat`. |
-| `cmd/mentord`    | Daemon entrypoint. Calls `daemon.Start()`, runs tray (macOS) or waits on signals. |
+| `cmd/pace`     | CLI: `init`, `login`, `status`, `pause`, `undo`, `actions`, `chat`. |
+| `cmd/paced`    | Daemon entrypoint. Calls `daemon.Start()`, runs tray (macOS) or waits on signals. |
 | `cmd/e2e`        | Smoke harness: spins up daemon, posts a synthetic event, verifies it lands in SQLite. |
 
 ## Key invariants
 
-1. **Daemon never writes user project files directly.** The only writes outside `~/.config/mentor/` go through `spawn_session`, which is just `claude -p` — same trust boundary as the user invoking it themselves.
-2. **Hooks fail open.** The hook script POSTs with a 500ms timeout and exits 0 regardless. If `mentord` is down, Claude sessions are not affected.
+1. **Daemon never writes user project files directly.** The only writes outside `~/.config/pace/` go through `spawn_session`, which is just `claude -p` — same trust boundary as the user invoking it themselves.
+2. **Hooks fail open.** The hook script POSTs with a 500ms timeout and exits 0 regardless. If `paced` is down, Claude sessions are not affected.
 3. **Actions are logged before they execute.** `actions.Run` inserts the row with `status='pending'` first, then runs the executor, then updates to `done` or `failed`. A daemon crash mid-execute leaves a forensic trace.
 4. **All timestamps are UTC at the SQL boundary.** `Loop.Once` calls `now.UTC()` before passing to rules. `ingest.store` converts incoming timestamps to UTC. This avoids lexicographic comparison failures in SQLite TEXT-stored times.
 5. **Single writer to SQLite.** The daemon is the only process that opens the DB for write. CLI talks to daemon over the socket; it never opens the DB.
-6. **Daemon binds an ephemeral port.** Port number written to `~/.config/mentor/port` (atomic rename). The hook script reads this file at every invocation, so the port can change across restarts without breaking anything.
+6. **Daemon binds an ephemeral port.** Port number written to `~/.config/pace/port` (atomic rename). The hook script reads this file at every invocation, so the port can change across restarts without breaking anything.
 
 ## Reasoning loop (the heart)
 
@@ -90,12 +90,12 @@ Rules in v0.2:
 
 ## Auth model
 
-Mentor's brain spawns `claude -p` as a subprocess. There are two sources of auth for that subprocess (in order of preference):
+Pace's brain spawns `claude -p` as a subprocess. There are two sources of auth for that subprocess (in order of preference):
 
-1. **Inherited from the user's shell** — `os.Environ()` passes through, so if the user has `claude setup-token`'d into Claude Code, Mentor inherits.
-2. **Mentor-specific token** — if `~/.config/mentor/auth.json` exists (via `mentor login`), `pkg/oauth.LoadAuthEnv()` returns `{ANTHROPIC_AUTH_TOKEN: <token>}` which the daemon merges into the subprocess env.
+1. **Inherited from the user's shell** — `os.Environ()` passes through, so if the user has `claude setup-token`'d into Claude Code, Pace inherits.
+2. **Pace-specific token** — if `~/.config/pace/auth.json` exists (via `pace login`), `pkg/oauth.LoadAuthEnv()` returns `{ANTHROPIC_AUTH_TOKEN: <token>}` which the daemon merges into the subprocess env.
 
-Either works. Both can coexist (the Mentor-specific token wins because it's added later).
+Either works. Both can coexist (the Pace-specific token wins because it's added later).
 
 ## State persistence
 

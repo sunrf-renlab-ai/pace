@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/loop"
+	"github.com/sunrf-renlab-ai/pace/pkg/loop"
 )
 
 func buildFakeClaude(t *testing.T) string {

@@ -21,7 +21,7 @@ import (
 )
 
 // Anthropic does not (as of writing) publish a stable third-party OAuth client_id
-// for the Claude.ai consumer subscription. The most reliable way for Mentor to
+// for the Claude.ai consumer subscription. The most reliable way for Pace to
 // inherit the user's auth is to spawn `claude -p` as a subprocess; if the user
 // has run `claude setup-token` (or is logged into Claude Code), the subprocess
 // inherits that auth. This package provides the scaffolding for a future
@@ -30,7 +30,7 @@ import (
 const (
 	defaultAuthzURL = "https://claude.ai/oauth/authorize"
 	defaultTokenURL = "https://api.anthropic.com/oauth/token"
-	defaultClientID = "mentor-cli"
+	defaultClientID = "pace-cli"
 	defaultScope    = "user:profile inference"
 )
 
@@ -54,7 +54,7 @@ func tokenPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "mentor", "auth.json"), nil
+	return filepath.Join(home, ".config", "pace", "auth.json"), nil
 }
 
 func Save(t *Token) error {
@@ -102,9 +102,9 @@ func LoadAuthEnv() (map[string]string, error) {
 // Login runs the full PKCE + browser flow, blocking until the user authorizes
 // or the context is cancelled.
 func Login(ctx context.Context) (*Token, error) {
-	authzURL := envOr("MENTOR_OAUTH_AUTHZ_URL", defaultAuthzURL)
-	tokenURL := envOr("MENTOR_OAUTH_TOKEN_URL", defaultTokenURL)
-	clientID := envOr("MENTOR_OAUTH_CLIENT_ID", defaultClientID)
+	authzURL := envOr("PACE_OAUTH_AUTHZ_URL", defaultAuthzURL)
+	tokenURL := envOr("PACE_OAUTH_TOKEN_URL", defaultTokenURL)
+	clientID := envOr("PACE_OAUTH_CLIENT_ID", defaultClientID)
 
 	verifier := randomString(64)
 	challenge := pkceS256(verifier)
@@ -138,7 +138,7 @@ func Login(ctx context.Context) (*Token, error) {
 			errCh <- errors.New("missing code")
 			return
 		}
-		fmt.Fprint(w, "<html><body><h2>Mentor authorized. You can close this tab.</h2></body></html>")
+		fmt.Fprint(w, "<html><body><h2>Pace authorized. You can close this tab.</h2></body></html>")
 		codeCh <- code
 	})
 	srv := &http.Server{Handler: mux}
@@ -156,7 +156,7 @@ func Login(ctx context.Context) (*Token, error) {
 
 	authURL := authzURL + "?" + q.Encode()
 	openBrowser(authURL)
-	fmt.Fprintln(os.Stderr, "Opening browser to authorize Mentor...")
+	fmt.Fprintln(os.Stderr, "Opening browser to authorize Pace...")
 	fmt.Fprintln(os.Stderr, "  if it doesn't open, visit:", authURL)
 
 	var code string

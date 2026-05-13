@@ -12,13 +12,13 @@ import (
 func Run(onQuit func()) {
 	onReady := func() {
 		systray.SetTitle("◐")
-		systray.SetTooltip("Mentor")
+		systray.SetTooltip("Pace")
 
-		mStatus := systray.AddMenuItem("Status…", "show status (use `mentor status`)")
+		mStatus := systray.AddMenuItem("Status…", "show status (use `pace status`)")
 		systray.AddSeparator()
-		mPauseAll := systray.AddMenuItem("Pause all (use `mentor pause`)", "pause notifications")
+		mPauseAll := systray.AddMenuItem("Pause all (use `pace pause`)", "pause notifications")
 		systray.AddSeparator()
-		mQuit := systray.AddMenuItem("Quit Mentor", "stop mentord")
+		mQuit := systray.AddMenuItem("Quit Pace", "stop paced")
 
 		go func() {
 			for {

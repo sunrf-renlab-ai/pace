@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/ipc"
+	"github.com/sunrf-renlab-ai/pace/pkg/ipc"
 )
 
 func dial() *ipc.Client {
 	c, err := ipc.Dial()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "cannot connect to mentord — is it running?")
+		fmt.Fprintln(os.Stderr, "cannot connect to paced — is it running?")
 		fmt.Fprintln(os.Stderr, "  details:", err)
 		os.Exit(2)
 	}

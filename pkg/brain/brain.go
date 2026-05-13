@@ -12,7 +12,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/loop"
+	"github.com/sunrf-renlab-ai/pace/pkg/loop"
 )
 
 //go:embed prompt.tmpl

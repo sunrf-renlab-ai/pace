@@ -1,14 +1,14 @@
-# Mentor — Design Spec
+# Pace — Design Spec
 
 **Date:** 2026-05-13
 **Status:** Draft, pending user approval
-**Repo:** `~/project/mentor` (open-source, will publish on GitHub)
+**Repo:** `~/project/pace` (open-source, will publish on GitHub)
 
 ---
 
 ## 1. What it is
 
-**Mentor** is an autonomous, real-time, cross-project AI project manager + technical mentor for developers running many parallel Claude Code (and compatible CLI agent) projects on one machine.
+**Pace** is an autonomous, real-time, cross-project AI project manager + technical pace for developers running many parallel Claude Code (and compatible CLI agent) projects on one machine.
 
 It is a single Go binary that:
 
@@ -18,7 +18,7 @@ It is a single Go binary that:
 - decides on its own when something matters (cheap heuristics first, LLM second)
 - takes action on its own (spawns helper Claude sessions, runs cross-project syncs, triggers macOS notifications)
 - logs everything so you can undo
-- exposes ONE conversational CLI (`mentor`) where you can shape its behavior in natural language
+- exposes ONE conversational CLI (`pace`) where you can shape its behavior in natural language
 
 Use only your existing Claude subscription — no API key, no extra LLM cost.
 
@@ -28,65 +28,65 @@ Every existing tool in this niche stops at one of two layers:
 - **Display** (Conductor, Claude Squad, Vibe Kanban): show many sessions, do not reason
 - **Periodic scan** (cron + summary tools): batch reports, not real-time, not interventional
 
-There is no tool that is **always on, always watching, always reasoning, autonomous to act**. That is the gap Mentor fills.
+There is no tool that is **always on, always watching, always reasoning, autonomous to act**. That is the gap Pace fills.
 
-The user runs 10+ parallel Claude Code projects daily. Cognitive overhead of remembering "where did I leave each one, what's the cross-project blast radius of this change, what should I do next" is the bottleneck. Mentor is the fix.
+The user runs 10+ parallel Claude Code projects daily. Cognitive overhead of remembering "where did I leave each one, what's the cross-project blast radius of this change, what should I do next" is the bottleneck. Pace is the fix.
 
 ## 3. Product principles
 
 1. **Real-time, not periodic.** Local rules trigger sub-second. LLM reasoning runs within seconds when needed.
 2. **Maximum autonomy.** Daemon acts first, logs after. No "are you sure?" dialogs by default.
 3. **Zero per-project setup.** A new project is auto-discovered and watched the moment a Claude session runs in it.
-4. **Zero LLM marginal cost.** All reasoning goes through `claude -p` subprocesses, billed against the user's existing Claude subscription via OAuth (`mentor login`).
-5. **One conversational surface.** All user influence on Mentor's behavior happens in `mentor` CLI chat. No GUI forms.
-6. **Single binary, single config dir.** No runtime deps. `~/.config/mentor/` for state, `~/.config/mentor/sock` for IPC.
-7. **Reversible.** Every action is logged with enough info to undo. `mentor undo` rolls back the last N actions.
+4. **Zero LLM marginal cost.** All reasoning goes through `claude -p` subprocesses, billed against the user's existing Claude subscription via OAuth (`pace login`).
+5. **One conversational surface.** All user influence on Pace's behavior happens in `pace` CLI chat. No GUI forms.
+6. **Single binary, single config dir.** No runtime deps. `~/.config/pace/` for state, `~/.config/pace/sock` for IPC.
+7. **Reversible.** Every action is logged with enough info to undo. `pace undo` rolls back the last N actions.
 
 ## 4. User stories (the "kinds of moments")
 
-These are the situations Mentor is built to handle. Each maps to specific rule + action behavior in §10.
+These are the situations Pace is built to handle. Each maps to specific rule + action behavior in §10.
 
-| Moment | Mentor's action |
+| Moment | Pace's action |
 |---|---|
 | You commit a schema change in project A; project B imports A's types | Auto-spawn `claude -p --add-dir B` to update B; notify "synced B with A's schema change" |
 | Test suite fails twice in a row in any project | Notify with stack trace summary; do NOT auto-fix (high risk) |
-| `claude` Stop hook fires in a project, then no activity for 30 min | Mentor "checks in": "Did you finish X in project Y, or did it stall?" via notification |
+| `claude` Stop hook fires in a project, then no activity for 30 min | Pace "checks in": "Did you finish X in project Y, or did it stall?" via notification |
 | You start working in project C while project A's deploy is still running | Notify "deploy A still in progress, last status: pending 3 min" |
-| You ask `mentor` "what's going on", "what did you do today", "stop bugging me about X", "I'm focused on Y this week" | Conversational handling: queries, prefs, pauses |
+| You ask `pace` "what's going on", "what did you do today", "stop bugging me about X", "I'm focused on Y this week" | Conversational handling: queries, prefs, pauses |
 | Two projects have a same-named file (e.g. `schema.sql`) and one just changed | Notify potential drift, do NOT auto-merge |
 | You have not touched project D in 14 days but it still has uncommitted changes | Weekly digest mention: "D is sitting on uncommitted work, archive or resume?" |
 
 ## 5. High-level architecture
 
 ```
-[~/.claude/settings.json — global hooks injected by `mentor init`]
+[~/.claude/settings.json — global hooks injected by `pace init`]
    ├─ UserPromptSubmit hook ─┐
    ├─ PostToolUse hook       ├─→ HTTP POST → 127.0.0.1:<port>/event
    └─ Stop hook              ─┘
                                        │
                                        ▼
    ┌─────────────────────────────────────────────────────────┐
-   │  mentord  (Go single binary, LaunchAgent / systemd-user) │
+   │  paced  (Go single binary, LaunchAgent / systemd-user) │
    │                                                         │
    │   Ingestor → Rule gate → LLM brain → Action executor    │
    │   (HTTP)    (Go pure)   (claude -p)  (claude -p +       │
    │      │         │           │           macOS notify)    │
    │      ▼         ▼           ▼              ▲             │
    │  ┌───────────────────────────────────────┐│             │
-   │  │  SQLite (~/.config/mentor/state.db)   │┘             │
+   │  │  SQLite (~/.config/pace/state.db)   │┘             │
    │  │  events / projects / actions /        │              │
    │  │  inferred_priorities / user_prefs /   │              │
    │  │  chat_log / paused_projects           │              │
    │  └───────────────────────────────────────┘              │
    │           ▲                                             │
-   │           │ unix socket: ~/.config/mentor/sock          │
+   │           │ unix socket: ~/.config/pace/sock          │
    │           │ (line-delimited JSON RPC)                   │
    └───────────┼─────────────────────────────────────────────┘
                │
        ┌───────┴────────┬─────────────────┐
        ▼                ▼                 ▼
-   `mentor` CLI    menubar tray       OAuth helper
-   (chat REPL,    (Go systray lib,   (`mentor login`,
+   `pace` CLI    menubar tray       OAuth helper
+   (chat REPL,    (Go systray lib,   (`pace login`,
     status,        emits menu        opens browser,
     pause, undo)   from daemon       catches OAuth
                    state)             callback, stores
@@ -97,15 +97,15 @@ These are the situations Mentor is built to handle. Each maps to specific rule +
 
 There are **at most two processes**:
 
-1. **`mentord`** — the daemon. Always running. LaunchAgent.
-2. **`mentor`** — short-lived CLI. Connects to daemon via unix socket. The chat REPL is a `mentor` process.
+1. **`paced`** — the daemon. Always running. LaunchAgent.
+2. **`pace`** — short-lived CLI. Connects to daemon via unix socket. The chat REPL is a `pace` process.
 
-The menubar tray is part of `mentord` (uses `getlantern/systray` library, runs in main goroutine on macOS). On Linux first ship, no tray; only notifications via `notify-send`.
+The menubar tray is part of `paced` (uses `getlantern/systray` library, runs in main goroutine on macOS). On Linux first ship, no tray; only notifications via `notify-send`.
 
 ### 5.2 Why two processes only
 
 - LaunchAgent's restart-on-crash works cleanly with one binary
-- `mentor` CLI being short-lived (REPL exits cleanly with Ctrl-D) means no zombie state
+- `pace` CLI being short-lived (REPL exits cleanly with Ctrl-D) means no zombie state
 - Tray + ingestor + reasoning + state in one daemon = trivial state consistency, no IPC between subsystems
 
 ## 6. Module breakdown
@@ -113,13 +113,13 @@ The menubar tray is part of `mentord` (uses `getlantern/systray` library, runs i
 Each module is its own Go package, isolated, independently testable.
 
 ### 6.1 `pkg/hook`
-Generates and installs hook entries in `~/.claude/settings.json`. The hook is a tiny shell script that reads the daemon port from `~/.config/mentor/port` and POSTs the hook payload to `127.0.0.1:<port>/event` with a 200ms timeout. Failure to reach daemon must NOT block the Claude session — hooks fail open.
+Generates and installs hook entries in `~/.claude/settings.json`. The hook is a tiny shell script that reads the daemon port from `~/.config/pace/port` and POSTs the hook payload to `127.0.0.1:<port>/event` with a 200ms timeout. Failure to reach daemon must NOT block the Claude session — hooks fail open.
 
-The daemon binds to an OS-assigned ephemeral port at startup and writes it to `~/.config/mentor/port` (atomic rename). Avoids fixed-port collision; stays robust across reinstall.
+The daemon binds to an OS-assigned ephemeral port at startup and writes it to `~/.config/pace/port` (atomic rename). Avoids fixed-port collision; stays robust across reinstall.
 
 Public API:
 - `Install() error` — idempotent, merges with existing hooks
-- `Uninstall() error` — removes only mentor's hooks, leaves others
+- `Uninstall() error` — removes only pace's hooks, leaves others
 - `IsInstalled() (bool, error)`
 
 ### 6.2 `pkg/ingest`
@@ -141,7 +141,7 @@ Spawns `claude -p` with a packaged prompt + context bundle. Parses LLM output (s
 Executes Decisions. Each action type is a pure function with a clear contract. Catalog in §11. Logs every action to `actions` table BEFORE executing (so even a crash mid-execute leaves a trace).
 
 ### 6.6 `pkg/notify`
-macOS: `osascript -e 'display notification ...'` with optional sound. Supports click handler URL — clicking a notification runs `mentor show <action_id>`. Linux: `notify-send`.
+macOS: `osascript -e 'display notification ...'` with optional sound. Supports click handler URL — clicking a notification runs `pace show <action_id>`. Linux: `notify-send`.
 
 ### 6.7 `pkg/state`
 Single SQLite handle, all DB access goes through this. Exposes typed query methods, no string SQL leaks elsewhere. Migrations are embedded `.sql` files run on daemon startup.
@@ -150,21 +150,21 @@ Single SQLite handle, all DB access goes through this. Exposes typed query metho
 Unix socket server (daemon side) + client (CLI side). Line-delimited JSON. Methods: `chat`, `status`, `pause`, `resume`, `undo`, `actions`, `menu` (for tray).
 
 ### 6.9 `pkg/oauth`
-Implements Anthropic's OAuth setup-token flow. `mentor login` opens browser to `https://claude.ai/oauth/authorize?...`, runs a one-off `127.0.0.1:<random>` listener for the callback, stores the token in macOS Keychain (`security` shell-out) or Linux Secret Service (`secret-tool`).
+Implements Anthropic's OAuth setup-token flow. `pace login` opens browser to `https://claude.ai/oauth/authorize?...`, runs a one-off `127.0.0.1:<random>` listener for the callback, stores the token in macOS Keychain (`security` shell-out) or Linux Secret Service (`secret-tool`).
 
 Token is read by `pkg/brain` when spawning `claude -p`. Two-tier mechanism (first that works wins):
 1. Set env `ANTHROPIC_AUTH_TOKEN=<oauth-token>` for the subprocess
-2. Fallback: write a temporary `~/.config/mentor/claude-creds.json` in the format `claude` CLI expects, point `XDG_CONFIG_HOME` at our config dir for the subprocess
+2. Fallback: write a temporary `~/.config/pace/claude-creds.json` in the format `claude` CLI expects, point `XDG_CONFIG_HOME` at our config dir for the subprocess
 
 Implementation step 4 (`pkg/oauth`) includes a one-day spike to verify which mechanism `claude` CLI honors for the current version, and locks in the choice.
 
 ### 6.10 `pkg/tray`
 Wraps `getlantern/systray`. Reads daemon state, renders menubar items: project list with status badges, "Pause all", "Open chat", "Quit". Pure presenter — no business logic.
 
-### 6.11 `cmd/mentord`
+### 6.11 `cmd/paced`
 Daemon entrypoint. Wires modules. LaunchAgent target.
 
-### 6.12 `cmd/mentor`
+### 6.12 `cmd/pace`
 CLI entrypoint. Subcommands: `init`, `login`, `chat` (default if no subcommand), `status`, `pause`, `resume`, `undo`, `actions`, `logs`, `uninstall`.
 
 ## 7. Event payload schema
@@ -238,7 +238,7 @@ CREATE TABLE user_prefs (
 CREATE TABLE chat_log (
   message_id TEXT PRIMARY KEY,
   timestamp  TIMESTAMP NOT NULL,
-  role       TEXT NOT NULL,               -- user | mentor
+  role       TEXT NOT NULL,               -- user | pace
   content    TEXT NOT NULL
 );
 ```
@@ -254,7 +254,7 @@ CREATE TABLE chat_log (
 Every `claude -p` invocation by `pkg/brain` uses this template:
 
 ```
-You are Mentor — an autonomous cross-project assistant for a developer running
+You are Pace — an autonomous cross-project assistant for a developer running
 many parallel Claude Code projects.
 
 CURRENT TIME: {{ts}}
@@ -269,7 +269,7 @@ Your job: decide ONE of:
   - "ignore"  (context turned out to be noise)
   - "notify"  (tell user via macOS notification)
   - "spawn_session"  (launch a helper claude -p in a target project)
-  - "sync_files" (write a cross-project note to ~/.config/mentor/notes/)
+  - "sync_files" (write a cross-project note to ~/.config/pace/notes/)
   - "ask"     (only if you genuinely cannot decide — uses notification)
 
 Output JSON:
@@ -306,21 +306,21 @@ Rules are added incrementally; v1 ships with R1-R3 + R8 only (most ROI, least fa
 |--------|--------|------|
 | `notify` | macOS notification, optional sound, optional click-handler URL | n/a (passive) |
 | `spawn_session` | Run `claude -p --add-dir <project> "<prompt>"` as detached subprocess; capture stdout to `actions.result_summary` | Kill subprocess if still running |
-| `sync_files` | Append to `~/.config/mentor/notes/<topic>.md`; intended as persistent cross-project memory the user can read | Truncate the appended block |
+| `sync_files` | Append to `~/.config/pace/notes/<topic>.md`; intended as persistent cross-project memory the user can read | Truncate the appended block |
 | `retry` | Re-run the failed command (only used if user prefs explicitly enable per-rule) | n/a (passive) |
 | `pause_project` | Set `projects.paused_until` | Clear `paused_until` |
 | `set_pref` | Insert into `user_prefs` | Restore previous value (kept in `undo_payload`) |
 
-`mentor undo` reverses the last N actions in reverse order, calling each action's undo function.
+`pace undo` reverses the last N actions in reverse order, calling each action's undo function.
 
 ## 12. Configuration & user prefs
 
 No config file. All configuration lives in SQLite `user_prefs` table. Set via:
 
-- `mentor` chat (natural language: "stop bugging me about socialmind" → LLM-mediated set_pref action)
-- `mentor pref set <key> <value>` (escape hatch for scripted setup)
+- `pace` chat (natural language: "stop bugging me about socialmind" → LLM-mediated set_pref action)
+- `pace pref set <key> <value>` (escape hatch for scripted setup)
 
-Defaults are baked into the binary. `mentor pref reset` wipes all overrides.
+Defaults are baked into the binary. `pace pref reset` wipes all overrides.
 
 Watched roots default: `$HOME/project`, `$HOME/dev`, `$HOME/code`, `$HOME/src`, `$HOME/repos`. Plus any path where a Claude session has been seen (auto-discovery via the hook payload's `project_path`). Override via `pref set watched_roots ...`.
 
@@ -329,55 +329,55 @@ Watched roots default: `$HOME/project`, `$HOME/dev`, `$HOME/code`, `$HOME/src`, 
 ### Install (one line)
 
 ```bash
-curl -fsSL https://mentor.sh/install | sh
+curl -fsSL https://pace.sh/install | sh
 ```
 
 The script:
 1. Detects platform (darwin-arm64 / darwin-amd64 / linux-amd64)
 2. Downloads matching binary from latest GitHub Release
-3. Installs to `/usr/local/bin/mentor` (or `~/.local/bin/mentor` if no sudo)
-4. Prints next-step: `mentor login`
+3. Installs to `/usr/local/bin/pace` (or `~/.local/bin/pace` if no sudo)
+4. Prints next-step: `pace login`
 
-(For v1, `mentor.sh` is a Cloudflare Worker that 302s to the GitHub Release `install.sh` raw URL. Buy `mentor.sh` separately, but install works without the domain via direct GitHub URL.)
+(For v1, `pace.sh` is a Cloudflare Worker that 302s to the GitHub Release `install.sh` raw URL. Buy `pace.sh` separately, but install works without the domain via direct GitHub URL.)
 
 ### First run
 
 ```bash
-$ mentor login
-Opening browser to authorize Mentor to use your Claude account...
+$ pace login
+Opening browser to authorize Pace to use your Claude account...
 [browser opens to claude.ai OAuth consent]
 [user clicks Authorize]
 ✓ Authenticated. Token stored in macOS Keychain.
 
-$ mentor init
+$ pace init
 Installing hooks to ~/.claude/settings.json... ✓
-Starting daemon (LaunchAgent: com.mentor.mentord)... ✓
+Starting daemon (LaunchAgent: com.pace.paced)... ✓
 Watching: ~/project/* (5 projects with .claude/ found)
 
-You're set. Run `mentor` to chat.
+You're set. Run `pace` to chat.
 
-$ mentor
-Mentor v0.1 — connected to daemon, watching 5 projects.
+$ pace
+Pace v0.1 — connected to daemon, watching 5 projects.
 
 >
 ```
 
 ### Subsequent days
 
-Daemon is always on. User just opens projects and runs `claude` as usual. Notifications appear when warranted. `mentor` for chat anytime.
+Daemon is always on. User just opens projects and runs `claude` as usual. Notifications appear when warranted. `pace` for chat anytime.
 
 ## 14. Error handling & safety
 
 | Failure mode | Behavior |
 |--------------|----------|
 | Daemon down when hook fires | Hook script silently fails (200ms timeout); session unaffected |
-| `claude` CLI not found | Daemon logs error, sends macOS notification "Mentor cannot find claude CLI", suspends LLM brain (rules still log events to SQLite) |
-| OAuth token expired/revoked | Brain returns "ignore" + logs; next `mentor` chat surfaces "please re-run mentor login" |
+| `claude` CLI not found | Daemon logs error, sends macOS notification "Pace cannot find claude CLI", suspends LLM brain (rules still log events to SQLite) |
+| OAuth token expired/revoked | Brain returns "ignore" + logs; next `pace` chat surfaces "please re-run pace login" |
 | LLM returns malformed JSON | Action defaults to `notify` with the raw output, so user sees what happened |
-| Action execution fails | Action status → `failed`, full error in `result_summary`, surfaces in `mentor actions` |
+| Action execution fails | Action status → `failed`, full error in `result_summary`, surfaces in `pace actions` |
 | SQLite locked | Retry with backoff up to 5s, then drop the event with a logged warning |
 | Disk full | Daemon refuses new events, sends notification, exits gracefully |
-| User runs `mentor uninstall` | Removes hooks from `~/.claude/settings.json`, stops & removes LaunchAgent, leaves SQLite intact (user can `rm -rf ~/.config/mentor` to fully wipe) |
+| User runs `pace uninstall` | Removes hooks from `~/.claude/settings.json`, stops & removes LaunchAgent, leaves SQLite intact (user can `rm -rf ~/.config/pace` to fully wipe) |
 
 **Safety invariants:**
 - Daemon never writes to user project files except via `spawn_session` (which is just running `claude` — same trust boundary as the user running it)
@@ -396,7 +396,7 @@ Per superpowers TDD discipline:
 - `pkg/action` — each action has a `dryRun` flag for tests; assert side effects via fake notifier / fake spawner.
 - `pkg/oauth` — fake OAuth server, full flow test.
 - `pkg/hook` — write to a tempfile JSON, assert merge behavior preserves existing entries.
-- `cmd/mentor` (CLI) — golden-file tests on REPL transcripts using a fake daemon socket.
+- `cmd/pace` (CLI) — golden-file tests on REPL transcripts using a fake daemon socket.
 - End-to-end smoke test: spin up daemon, fire a synthetic hook event, assert action recorded. Run in CI.
 
 Minimum bar to ship v1: every `pkg/*` has tests; e2e smoke green.
@@ -404,10 +404,10 @@ Minimum bar to ship v1: every `pkg/*` has tests; e2e smoke green.
 ## 16. Open-source repo layout
 
 ```
-mentor/
+pace/
 ├── cmd/
-│   ├── mentor/        # CLI binary
-│   └── mentord/       # daemon binary
+│   ├── pace/        # CLI binary
+│   └── paced/       # daemon binary
 ├── pkg/
 │   ├── hook/
 │   ├── ingest/
@@ -423,14 +423,14 @@ mentor/
 │   └── tray/
 ├── install/
 │   ├── install.sh
-│   ├── com.mentor.mentord.plist     # LaunchAgent template
-│   └── mentor.service                # systemd-user template
+│   ├── com.pace.paced.plist     # LaunchAgent template
+│   └── pace.service                # systemd-user template
 ├── docs/
 │   ├── README.md
 │   ├── ARCHITECTURE.md
 │   └── superpowers/
 │       ├── specs/
-│       │   └── 2026-05-13-mentor-design.md  (this file)
+│       │   └── 2026-05-13-pace-design.md  (this file)
 │       └── plans/
 ├── .github/
 │   └── workflows/
@@ -441,7 +441,7 @@ mentor/
 └── README.md
 ```
 
-Build: `go build -o bin/mentor ./cmd/mentor && go build -o bin/mentord ./cmd/mentord`. Cross-build via `GOOS/GOARCH` matrix in `release.yml`.
+Build: `go build -o bin/pace ./cmd/pace && go build -o bin/paced ./cmd/paced`. Cross-build via `GOOS/GOARCH` matrix in `release.yml`.
 
 ## 17. Out of scope for v1
 
@@ -464,10 +464,10 @@ These are roadmap items, tracked separately, NOT in v1 scope.
 1. Skeleton: monorepo layout, `pkg/state` with migrations, basic CI
 2. `pkg/ingest` + `pkg/hook` — events flowing in end-to-end (no LLM yet)
 3. `pkg/rules` with R1-R3 + R8
-4. `pkg/oauth` + `mentor login`
+4. `pkg/oauth` + `pace login`
 5. `pkg/brain` (with fake LLM in tests, real `claude -p` in dev)
 6. `pkg/action` — `notify` first, then `spawn_session`, then rest
-7. `pkg/ipc` + `cmd/mentor` chat REPL
+7. `pkg/ipc` + `cmd/pace` chat REPL
 8. `pkg/tray` (macOS only for v1)
 9. `install/install.sh` + LaunchAgent + GitHub release pipeline
 10. README + ARCHITECTURE.md + 1-line install demo gif

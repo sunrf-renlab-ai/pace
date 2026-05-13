@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/action"
-	"github.com/sunrf-renlab-ai/mentor/pkg/ingest"
-	"github.com/sunrf-renlab-ai/mentor/pkg/rules"
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/action"
+	"github.com/sunrf-renlab-ai/pace/pkg/ingest"
+	"github.com/sunrf-renlab-ai/pace/pkg/rules"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 // Regression test: SQLite stores time.Time in TZ-suffixed text. Local-tz `now`

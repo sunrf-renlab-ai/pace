@@ -12,14 +12,14 @@ import (
 //go:embed script.sh.tmpl
 var scriptTemplate string
 
-const marker = "# mentor-managed-hook"
+const marker = "# pace-managed-hook"
 
 func configDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "mentor"), nil
+	return filepath.Join(home, ".config", "pace"), nil
 }
 
 func settingsPath() (string, error) {
@@ -64,7 +64,7 @@ func Install() error {
 
 	for _, key := range []string{"UserPromptSubmit", "PostToolUse", "Stop"} {
 		entries, _ := hooks[key].([]any)
-		entries = removeMentorEntries(entries)
+		entries = removePaceEntries(entries)
 		entries = append(entries, map[string]any{
 			"hooks": []any{map[string]any{
 				"type":    "command",
@@ -109,7 +109,7 @@ func Uninstall() error {
 	}
 	for _, key := range []string{"UserPromptSubmit", "PostToolUse", "Stop"} {
 		if entries, ok := hooks[key].([]any); ok {
-			cleaned := removeMentorEntries(entries)
+			cleaned := removePaceEntries(entries)
 			if len(cleaned) == 0 {
 				delete(hooks, key)
 			} else {
@@ -141,7 +141,7 @@ func IsInstalled() (bool, error) {
 	return strings.Contains(string(data), marker), nil
 }
 
-func removeMentorEntries(entries []any) []any {
+func removePaceEntries(entries []any) []any {
 	out := make([]any, 0, len(entries))
 	for _, e := range entries {
 		em, ok := e.(map[string]any)
@@ -150,16 +150,16 @@ func removeMentorEntries(entries []any) []any {
 			continue
 		}
 		inner, _ := em["hooks"].([]any)
-		isMentor := false
+		isPace := false
 		for _, h := range inner {
 			if hm, ok := h.(map[string]any); ok {
 				if cmd, _ := hm["command"].(string); strings.Contains(cmd, marker) {
-					isMentor = true
+					isPace = true
 					break
 				}
 			}
 		}
-		if !isMentor {
+		if !isPace {
 			out = append(out, e)
 		}
 	}

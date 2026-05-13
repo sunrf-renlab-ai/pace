@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type R8PeriodicOverview struct {

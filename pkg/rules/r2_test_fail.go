@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/ingest"
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/ingest"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 var testCmdPattern = regexp.MustCompile(`(?i)\b(go test|npm test|bun test|pnpm test|yarn test|pytest|jest|vitest|cargo test|mix test)\b`)

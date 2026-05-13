@@ -35,7 +35,7 @@ func TestInstallCreatesSettingsAndScript(t *testing.T) {
 		}
 	}
 
-	scriptPath := filepath.Join(dir, ".config", "mentor", "hook.sh")
+	scriptPath := filepath.Join(dir, ".config", "pace", "hook.sh")
 	st, err := os.Stat(scriptPath)
 	if err != nil {
 		t.Fatalf("stat script: %v", err)
@@ -75,7 +75,7 @@ func TestInstallPreservesExistingHooks(t *testing.T) {
 	hooks := s["hooks"].(map[string]any)
 	prompts := hooks["UserPromptSubmit"].([]any)
 	if len(prompts) < 2 {
-		t.Errorf("expected existing + mentor hooks, got %d entries", len(prompts))
+		t.Errorf("expected existing + pace hooks, got %d entries", len(prompts))
 	}
 }
 
@@ -107,12 +107,12 @@ func TestInstallIdempotent(t *testing.T) {
 			}
 		}
 		if count != 1 {
-			t.Errorf("%s mentor hook count = %d, want 1 (idempotency broken)", key, count)
+			t.Errorf("%s pace hook count = %d, want 1 (idempotency broken)", key, count)
 		}
 	}
 }
 
-func TestUninstallRemovesOnlyMentorHooks(t *testing.T) {
+func TestUninstallRemovesOnlyPaceHooks(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	settingsPath := filepath.Join(dir, ".claude", "settings.json")
@@ -143,6 +143,6 @@ func TestUninstallRemovesOnlyMentorHooks(t *testing.T) {
 	hooks := s["hooks"].(map[string]any)
 	pt := hooks["PostToolUse"].([]any)
 	if len(pt) != 1 {
-		t.Errorf("non-mentor PostToolUse entries = %d, want 1", len(pt))
+		t.Errorf("non-pace PostToolUse entries = %d, want 1", len(pt))
 	}
 }

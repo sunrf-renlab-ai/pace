@@ -1,9 +1,9 @@
 #!/bin/sh
 set -e
 
-REPO="${MENTOR_REPO:-sunrf-renlab-ai/mentor}"
-VERSION="${MENTOR_VERSION:-latest}"
-INSTALL_DIR="${MENTOR_INSTALL_DIR:-/usr/local/bin}"
+REPO="${PACE_REPO:-sunrf-renlab-ai/pace}"
+VERSION="${PACE_VERSION:-latest}"
+INSTALL_DIR="${PACE_INSTALL_DIR:-/usr/local/bin}"
 
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
@@ -23,70 +23,70 @@ else
   REL_URL="https://api.github.com/repos/${REPO}/releases/tags/${VERSION}"
 fi
 
-ASSET=$(curl -sSL "$REL_URL" | grep -o "https://[^\"]*mentor-${OS}-${ARCH}\\.tar\\.gz" | head -n1)
+ASSET=$(curl -sSL "$REL_URL" | grep -o "https://[^\"]*pace-${OS}-${ARCH}\\.tar\\.gz" | head -n1)
 if [ -z "$ASSET" ]; then
   echo "no release asset for ${OS}-${ARCH}" >&2; exit 1
 fi
 
 TMP=$(mktemp -d)
 trap "rm -rf $TMP" EXIT
-curl -sSL "$ASSET" -o "$TMP/mentor.tar.gz"
-tar xzf "$TMP/mentor.tar.gz" -C "$TMP"
+curl -sSL "$ASSET" -o "$TMP/pace.tar.gz"
+tar xzf "$TMP/pace.tar.gz" -C "$TMP"
 
 if [ ! -w "$INSTALL_DIR" ]; then
   INSTALL_DIR="$HOME/.local/bin"
   mkdir -p "$INSTALL_DIR"
 fi
 
-mv "$TMP/mentor" "$INSTALL_DIR/mentor"
-mv "$TMP/mentord" "$INSTALL_DIR/mentord"
-chmod +x "$INSTALL_DIR/mentor" "$INSTALL_DIR/mentord"
+mv "$TMP/pace" "$INSTALL_DIR/pace"
+mv "$TMP/paced" "$INSTALL_DIR/paced"
+chmod +x "$INSTALL_DIR/pace" "$INSTALL_DIR/paced"
 
 if [ "$OS" = "darwin" ]; then
-  PLIST="$HOME/Library/LaunchAgents/com.mentor.mentord.plist"
+  PLIST="$HOME/Library/LaunchAgents/com.pace.paced.plist"
   cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.mentor.mentord</string>
-  <key>ProgramArguments</key><array><string>${INSTALL_DIR}/mentord</string></array>
+  <key>Label</key><string>com.pace.paced</string>
+  <key>ProgramArguments</key><array><string>${INSTALL_DIR}/paced</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>${HOME}/.config/mentor/mentord.log</string>
-  <key>StandardErrorPath</key><string>${HOME}/.config/mentor/mentord.log</string>
+  <key>StandardOutPath</key><string>${HOME}/.config/pace/paced.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/.config/pace/paced.log</string>
 </dict>
 </plist>
 EOF
-  mkdir -p "$HOME/.config/mentor"
+  mkdir -p "$HOME/.config/pace"
   launchctl unload "$PLIST" 2>/dev/null || true
   launchctl load "$PLIST"
 else
-  UNIT="$HOME/.config/systemd/user/mentord.service"
+  UNIT="$HOME/.config/systemd/user/paced.service"
   mkdir -p "$(dirname "$UNIT")"
   cat > "$UNIT" <<EOF
 [Unit]
-Description=Mentor daemon
+Description=Pace daemon
 After=default.target
 
 [Service]
-ExecStart=${INSTALL_DIR}/mentord
+ExecStart=${INSTALL_DIR}/paced
 Restart=on-failure
 
 [Install]
 WantedBy=default.target
 EOF
   systemctl --user daemon-reload
-  systemctl --user enable --now mentord.service
+  systemctl --user enable --now paced.service
 fi
 
 cat <<EOF
 
-Mentor installed to $INSTALL_DIR/mentor
+Pace installed to $INSTALL_DIR/pace
 Daemon started.
 
 Next:
-  1. mentor init     # install hooks into ~/.claude/settings.json
-  2. mentor          # open chat
+  1. pace init     # install hooks into ~/.claude/settings.json
+  2. pace          # open chat
 
 EOF

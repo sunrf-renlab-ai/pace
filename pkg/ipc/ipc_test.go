@@ -9,7 +9,7 @@ func TestServerClientRoundTrip(t *testing.T) {
 	// macOS unix socket paths are limited to ~104 chars, so we cannot use
 	// t.TempDir() directly (it produces very long paths). Use a short /tmp path.
 	sock := shortSocketPath(t)
-	t.Setenv("MENTOR_SOCKET_PATH", sock)
+	t.Setenv("PACE_SOCKET_PATH", sock)
 
 	srv, err := NewServer()
 	if err != nil {
@@ -37,7 +37,7 @@ func TestServerClientRoundTrip(t *testing.T) {
 
 func TestUnknownMethod(t *testing.T) {
 	sock := shortSocketPath(t)
-	t.Setenv("MENTOR_SOCKET_PATH", sock)
+	t.Setenv("PACE_SOCKET_PATH", sock)
 	srv, err := NewServer()
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)

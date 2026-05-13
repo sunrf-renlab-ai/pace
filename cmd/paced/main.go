@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/daemon"
-	"github.com/sunrf-renlab-ai/mentor/pkg/tray"
+	"github.com/sunrf-renlab-ai/pace/pkg/daemon"
+	"github.com/sunrf-renlab-ai/pace/pkg/tray"
 )
 
 func main() {
@@ -16,9 +16,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("start daemon: %v", err)
 	}
-	fmt.Fprintln(os.Stderr, "mentord running")
+	fmt.Fprintln(os.Stderr, "paced running")
 
-	if tray.Available() && os.Getenv("MENTOR_NO_TRAY") == "" {
+	if tray.Available() && os.Getenv("PACE_NO_TRAY") == "" {
 		// systray.Run blocks the main goroutine; install a signal handler
 		// that calls daemon.Stop on shutdown via tray.Run's onQuit.
 		go func() {

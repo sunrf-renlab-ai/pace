@@ -1,14 +1,14 @@
-# Mentor v1 Implementation Plan
+# Pace v1 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build Mentor v1 — an autonomous, real-time, cross-project AI project manager that watches all your Claude Code sessions, decides what matters via local rules + LLM, and takes action on your behalf.
+**Goal:** Build Pace v1 — an autonomous, real-time, cross-project AI project manager that watches all your Claude Code sessions, decides what matters via local rules + LLM, and takes action on your behalf.
 
-**Architecture:** Single Go binary (`mentord` daemon + `mentor` CLI). Hooks injected globally into `~/.claude/settings.json` POST events to daemon over HTTP loopback. Daemon runs Ingestor → Rule gate (pure Go) → LLM brain (`claude -p` subprocess using user's OAuth token) → Action executor. SQLite for state. Unix socket for CLI/tray IPC. Reversible actions logged before execute.
+**Architecture:** Single Go binary (`paced` daemon + `pace` CLI). Hooks injected globally into `~/.claude/settings.json` POST events to daemon over HTTP loopback. Daemon runs Ingestor → Rule gate (pure Go) → LLM brain (`claude -p` subprocess using user's OAuth token) → Action executor. SQLite for state. Unix socket for CLI/tray IPC. Reversible actions logged before execute.
 
 **Tech Stack:** Go 1.22+, modernc.org/sqlite (pure-Go, no cgo), getlantern/systray (macOS menubar), embed for migrations + prompt templates, osascript (macOS notifications), notify-send (Linux), launchd (macOS), systemd-user (Linux).
 
-**Spec:** `docs/superpowers/specs/2026-05-13-mentor-design.md`
+**Spec:** `docs/superpowers/specs/2026-05-13-pace-design.md`
 
 ---
 
@@ -27,8 +27,8 @@ Goal: a Go module that initializes a SQLite database with the v1 schema. Smoke-t
 - [ ] **Step 1: Init module**
 
 ```bash
-cd /Users/blink/project/mentor
-go mod init github.com/sunrf-renlab-ai/mentor
+cd /Users/blink/project/pace
+go mod init github.com/sunrf-renlab-ai/pace
 ```
 
 - [ ] **Step 2: Write .gitignore**
@@ -41,7 +41,7 @@ coverage.*
 .DS_Store
 *.db
 *.db-journal
-~/.config/mentor/
+~/.config/pace/
 ```
 
 - [ ] **Step 3: Write LICENSE (MIT)**
@@ -73,7 +73,7 @@ SOFTWARE.
 - [ ] **Step 4: Write minimal README**
 
 ```markdown
-# Mentor
+# Pace
 
 Autonomous AI project manager for developers running many parallel Claude Code projects.
 
@@ -84,14 +84,14 @@ See `docs/superpowers/specs/` for design.
 ## Install (when released)
 
 \`\`\`bash
-curl -fsSL https://mentor.sh/install | sh
+curl -fsSL https://pace.sh/install | sh
 \`\`\`
 
 ## Build from source
 
 \`\`\`bash
-go build -o bin/mentor ./cmd/mentor
-go build -o bin/mentord ./cmd/mentord
+go build -o bin/pace ./cmd/pace
+go build -o bin/paced ./cmd/paced
 \`\`\`
 
 ## License
@@ -306,7 +306,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state/migrations"
+	"github.com/sunrf-renlab-ai/pace/pkg/state/migrations"
 )
 
 type State struct {
@@ -453,7 +453,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 func setupTestState(t *testing.T) *state.State {
@@ -600,7 +600,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type Handler struct {
@@ -701,8 +701,8 @@ git commit -m "ingest: HTTP /event endpoint, validates and stores"
 
 ```bash
 #!/bin/sh
-# mentor-hook: posts the hook payload to the local mentor daemon. Fails open.
-PORT_FILE="${HOME}/.config/mentor/port"
+# pace-hook: posts the hook payload to the local pace daemon. Fails open.
+PORT_FILE="${HOME}/.config/pace/port"
 [ -f "$PORT_FILE" ] || exit 0
 PORT=$(cat "$PORT_FILE" 2>/dev/null)
 [ -z "$PORT" ] && exit 0
@@ -783,7 +783,7 @@ func TestInstallCreatesSettingsAndScript(t *testing.T) {
 		}
 	}
 
-	scriptPath := filepath.Join(dir, ".config", "mentor", "hook.sh")
+	scriptPath := filepath.Join(dir, ".config", "pace", "hook.sh")
 	st, err := os.Stat(scriptPath)
 	if err != nil {
 		t.Fatalf("stat script: %v", err)
@@ -823,11 +823,11 @@ func TestInstallPreservesExistingHooks(t *testing.T) {
 	hooks := s["hooks"].(map[string]any)
 	prompts := hooks["UserPromptSubmit"].([]any)
 	if len(prompts) < 2 {
-		t.Errorf("expected existing + mentor hooks, got %d entries", len(prompts))
+		t.Errorf("expected existing + pace hooks, got %d entries", len(prompts))
 	}
 }
 
-func TestUninstallRemovesOnlyMentorHooks(t *testing.T) {
+func TestUninstallRemovesOnlyPaceHooks(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	if err := Install(); err != nil {
@@ -848,8 +848,8 @@ func TestUninstallRemovesOnlyMentorHooks(t *testing.T) {
 				inner := em["hooks"].([]any)
 				for _, h := range inner {
 					hm := h.(map[string]any)
-					if cmd, _ := hm["command"].(string); cmd != "" && containsMentor(cmd) {
-						t.Errorf("mentor hook still present after uninstall: %v", cmd)
+					if cmd, _ := hm["command"].(string); cmd != "" && containsPace(cmd) {
+						t.Errorf("pace hook still present after uninstall: %v", cmd)
 					}
 				}
 			}
@@ -857,9 +857,9 @@ func TestUninstallRemovesOnlyMentorHooks(t *testing.T) {
 	}
 }
 
-func containsMentor(s string) bool {
+func containsPace(s string) bool {
 	for i := 0; i < len(s)-6; i++ {
-		if s[i:i+6] == "mentor" {
+		if s[i:i+6] == "pace" {
 			return true
 		}
 	}
@@ -891,14 +891,14 @@ import (
 var scriptTemplate string
 
 // Marker tag used in the command string so we can find/remove only our hooks.
-const marker = "# mentor-managed-hook"
+const marker = "# pace-managed-hook"
 
 func configDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "mentor"), nil
+	return filepath.Join(home, ".config", "pace"), nil
 }
 
 func settingsPath() (string, error) {
@@ -943,7 +943,7 @@ func Install() error {
 
 	for _, key := range []string{"UserPromptSubmit", "PostToolUse", "Stop"} {
 		entries, _ := hooks[key].([]any)
-		entries = removeMentorEntries(entries)
+		entries = removePaceEntries(entries)
 		entries = append(entries, map[string]any{
 			"hooks": []any{map[string]any{
 				"type":    "command",
@@ -988,7 +988,7 @@ func Uninstall() error {
 	}
 	for _, key := range []string{"UserPromptSubmit", "PostToolUse", "Stop"} {
 		if entries, ok := hooks[key].([]any); ok {
-			hooks[key] = removeMentorEntries(entries)
+			hooks[key] = removePaceEntries(entries)
 			if len(hooks[key].([]any)) == 0 {
 				delete(hooks, key)
 			}
@@ -1018,7 +1018,7 @@ func IsInstalled() (bool, error) {
 	return strings.Contains(string(data), marker), nil
 }
 
-func removeMentorEntries(entries []any) []any {
+func removePaceEntries(entries []any) []any {
 	out := make([]any, 0, len(entries))
 	for _, e := range entries {
 		em, ok := e.(map[string]any)
@@ -1027,16 +1027,16 @@ func removeMentorEntries(entries []any) []any {
 			continue
 		}
 		inner, _ := em["hooks"].([]any)
-		isMentor := false
+		isPace := false
 		for _, h := range inner {
 			if hm, ok := h.(map[string]any); ok {
 				if cmd, _ := hm["command"].(string); strings.Contains(cmd, marker) {
-					isMentor = true
+					isPace = true
 					break
 				}
 			}
 		}
-		if !isMentor {
+		if !isPace {
 			out = append(out, e)
 		}
 	}
@@ -1055,13 +1055,13 @@ Expected: 3 tests PASS.
 
 ```bash
 git add pkg/hook/
-git commit -m "hook: install/uninstall mentor hooks in ~/.claude/settings.json (idempotent, preserves others)"
+git commit -m "hook: install/uninstall pace hooks in ~/.claude/settings.json (idempotent, preserves others)"
 ```
 
 ### Task 8: Daemon main with port-write
 
 **Files:**
-- Create: `cmd/mentord/main.go`
+- Create: `cmd/paced/main.go`
 - Create: `pkg/daemon/daemon.go`
 - Create: `pkg/daemon/daemon_test.go`
 
@@ -1091,7 +1091,7 @@ func TestStartWritesPortFileAndAcceptsEvents(t *testing.T) {
 	}
 	defer d.Stop()
 
-	portFile := filepath.Join(dir, ".config", "mentor", "port")
+	portFile := filepath.Join(dir, ".config", "pace", "port")
 	deadline := time.Now().Add(2 * time.Second)
 	var port string
 	for time.Now().Before(deadline) {
@@ -1135,8 +1135,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/ingest"
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/ingest"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type Daemon struct {
@@ -1150,7 +1150,7 @@ func Start() (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg := filepath.Join(home, ".config", "mentor")
+	cfg := filepath.Join(home, ".config", "pace")
 	if err := os.MkdirAll(cfg, 0o755); err != nil {
 		return nil, err
 	}
@@ -1196,12 +1196,12 @@ func (d *Daemon) Stop() error {
 	d.server.Shutdown(ctx)
 	d.State.Close()
 	home, _ := os.UserHomeDir()
-	os.Remove(filepath.Join(home, ".config", "mentor", "port"))
+	os.Remove(filepath.Join(home, ".config", "pace", "port"))
 	return nil
 }
 ```
 
-- [ ] **Step 4: Implement cmd/mentord/main.go**
+- [ ] **Step 4: Implement cmd/paced/main.go**
 
 ```go
 package main
@@ -1213,7 +1213,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/daemon"
+	"github.com/sunrf-renlab-ai/pace/pkg/daemon"
 )
 
 func main() {
@@ -1221,7 +1221,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("start daemon: %v", err)
 	}
-	fmt.Fprintln(os.Stderr, "mentord running")
+	fmt.Fprintln(os.Stderr, "paced running")
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -1240,7 +1240,7 @@ Expected: all PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add cmd/mentord/ pkg/daemon/
+git add cmd/paced/ pkg/daemon/
 git commit -m "daemon: bind ephemeral port, write port file, serve /event"
 ```
 
@@ -1265,8 +1265,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/ingest"
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/ingest"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type Trigger struct {
@@ -1339,8 +1339,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/ingest"
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/ingest"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type Trigger struct {
@@ -1412,8 +1412,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/ingest"
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/ingest"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 func helperState(t *testing.T) *state.State {
@@ -1518,7 +1518,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type R1ToolErrorBurst struct{}
@@ -1596,7 +1596,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/ingest"
+	"github.com/sunrf-renlab-ai/pace/pkg/ingest"
 )
 
 func TestR2FiresOnTestCommandError(t *testing.T) {
@@ -1678,7 +1678,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 var testCmdPattern = regexp.MustCompile(`(?i)\b(go test|npm test|bun test|pnpm test|yarn test|pytest|jest|vitest|cargo test|mix test)\b`)
@@ -1726,7 +1726,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 var deployCmdPattern = regexp.MustCompile(`(?i)\b(vercel deploy|render deploys|fly deploy|netlify deploy|gh workflow run|kubectl apply|terraform apply)\b`)
@@ -1823,7 +1823,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type R8PeriodicOverview struct {
@@ -1880,7 +1880,7 @@ Goal: spawn `claude -p` with packaged context, parse decision JSON.
 `pkg/brain/prompt.tmpl`:
 
 ```
-You are Mentor — an autonomous cross-project assistant for a developer running many parallel Claude Code projects.
+You are Pace — an autonomous cross-project assistant for a developer running many parallel Claude Code projects.
 
 CURRENT TIME: {{.Now}}
 ACTIVE PROJECTS: {{.ProjectsJSON}}
@@ -1894,7 +1894,7 @@ Your job: decide ONE of:
   - "ignore"  (context turned out to be noise)
   - "notify"  (tell user via macOS notification — params.title, params.body)
   - "spawn_session"  (params.project_path, params.prompt — launches detached `claude -p`)
-  - "sync_files" (params.note_topic, params.body — append to ~/.config/mentor/notes/<topic>.md)
+  - "sync_files" (params.note_topic, params.body — append to ~/.config/pace/notes/<topic>.md)
 
 Output ONLY valid JSON:
   {"decision": "...", "rationale": "...", "params": {...}}
@@ -2262,7 +2262,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type Action struct {
@@ -2336,7 +2336,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type notifyExec struct{ n Notifier }
@@ -2345,7 +2345,7 @@ func (e *notifyExec) Execute(ctx context.Context, s *state.State, a *Action) err
 	title, _ := a.Params["title"].(string)
 	body, _ := a.Params["body"].(string)
 	if title == "" {
-		title = "Mentor"
+		title = "Pace"
 	}
 	if body == "" {
 		body = a.Rationale
@@ -2368,7 +2368,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type fakeNotifier struct{ calls []struct{ Title, Body string } }
@@ -2541,7 +2541,7 @@ import (
 	"context"
 	"os/exec"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type SpawnExec struct {
@@ -2607,7 +2607,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type SyncFilesExec struct{}
@@ -2619,7 +2619,7 @@ func (SyncFilesExec) Execute(ctx context.Context, s *state.State, a *Action) err
 		return errInvalidParams
 	}
 	home, _ := os.UserHomeDir()
-	dir := filepath.Join(home, ".config", "mentor", "notes")
+	dir := filepath.Join(home, ".config", "pace", "notes")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -2647,7 +2647,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type PauseProjectExec struct{}
@@ -2690,7 +2690,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type SetPrefExec struct{}
@@ -2720,7 +2720,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 // UndoLast reverses the last N done actions in reverse order.
@@ -2889,10 +2889,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/action"
-	"github.com/sunrf-renlab-ai/mentor/pkg/brain"
-	"github.com/sunrf-renlab-ai/mentor/pkg/rules"
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/action"
+	"github.com/sunrf-renlab-ai/pace/pkg/brain"
+	"github.com/sunrf-renlab-ai/pace/pkg/rules"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type Loop struct {
@@ -2947,7 +2947,7 @@ func (l *Loop) handleTrigger(ctx context.Context, t rules.Trigger) {
 			Type:        "notify",
 			ProjectPath: t.ProjectPath,
 			Rationale:   t.Reason,
-			Params:      map[string]any{"title": "Mentor: " + t.RuleName, "body": t.Reason},
+			Params:      map[string]any{"title": "Pace: " + t.RuleName, "body": t.Reason},
 		})
 		return
 	}
@@ -2959,7 +2959,7 @@ func (l *Loop) handleTrigger(ctx context.Context, t rules.Trigger) {
 		l.Actions.Run(ctx, l.State, &action.Action{
 			Type:      "notify",
 			Rationale: "brain failed: " + err.Error(),
-			Params:    map[string]any{"title": "Mentor (degraded)", "body": t.Reason},
+			Params:    map[string]any{"title": "Pace (degraded)", "body": t.Reason},
 		})
 		return
 	}
@@ -3053,10 +3053,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/action"
-	"github.com/sunrf-renlab-ai/mentor/pkg/ingest"
-	"github.com/sunrf-renlab-ai/mentor/pkg/rules"
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/action"
+	"github.com/sunrf-renlab-ai/pace/pkg/ingest"
+	"github.com/sunrf-renlab-ai/pace/pkg/rules"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type fakeNotifier struct{ count int }
@@ -3123,14 +3123,14 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/action"
-	"github.com/sunrf-renlab-ai/mentor/pkg/brain"
-	"github.com/sunrf-renlab-ai/mentor/pkg/ingest"
-	"github.com/sunrf-renlab-ai/mentor/pkg/loop"
-	"github.com/sunrf-renlab-ai/mentor/pkg/notify"
-	"github.com/sunrf-renlab-ai/mentor/pkg/oauth"
-	"github.com/sunrf-renlab-ai/mentor/pkg/rules"
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/action"
+	"github.com/sunrf-renlab-ai/pace/pkg/brain"
+	"github.com/sunrf-renlab-ai/pace/pkg/ingest"
+	"github.com/sunrf-renlab-ai/pace/pkg/loop"
+	"github.com/sunrf-renlab-ai/pace/pkg/notify"
+	"github.com/sunrf-renlab-ai/pace/pkg/oauth"
+	"github.com/sunrf-renlab-ai/pace/pkg/rules"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type Daemon struct {
@@ -3146,7 +3146,7 @@ func Start() (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg := filepath.Join(home, ".config", "mentor")
+	cfg := filepath.Join(home, ".config", "pace")
 	if err := os.MkdirAll(cfg, 0o755); err != nil {
 		return nil, err
 	}
@@ -3202,7 +3202,7 @@ func (d *Daemon) Stop() error {
 	d.server.Shutdown(ctx)
 	d.State.Close()
 	home, _ := os.UserHomeDir()
-	os.Remove(filepath.Join(home, ".config", "mentor", "port"))
+	os.Remove(filepath.Join(home, ".config", "pace", "port"))
 	return nil
 }
 ```
@@ -3224,7 +3224,7 @@ git commit -m "loop: rule->brain->action coordinator; daemon wires it on Start"
 
 ## Phase 7 — OAuth + login
 
-Goal: `mentor login` flow stores Anthropic OAuth token; brain reads it.
+Goal: `pace login` flow stores Anthropic OAuth token; brain reads it.
 
 ### Task 18: OAuth implementation
 
@@ -3261,12 +3261,12 @@ import (
 // uses the documented PKCE + authorization-code flow targeting
 // https://claude.ai/oauth/authorize and https://api.anthropic.com/oauth/token.
 // If the live endpoints differ at runtime, override via env vars
-// MENTOR_OAUTH_AUTHZ_URL / MENTOR_OAUTH_TOKEN_URL / MENTOR_OAUTH_CLIENT_ID.
+// PACE_OAUTH_AUTHZ_URL / PACE_OAUTH_TOKEN_URL / PACE_OAUTH_CLIENT_ID.
 
 const (
 	defaultAuthzURL  = "https://claude.ai/oauth/authorize"
 	defaultTokenURL  = "https://api.anthropic.com/oauth/token"
-	defaultClientID  = "mentor-cli"
+	defaultClientID  = "pace-cli"
 	defaultScope     = "user:profile inference"
 )
 
@@ -3290,7 +3290,7 @@ func tokenPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "mentor", "auth.json"), nil
+	return filepath.Join(home, ".config", "pace", "auth.json"), nil
 }
 
 func Save(t *Token) error {
@@ -3337,9 +3337,9 @@ func LoadAuthEnv() (map[string]string, error) {
 // Login runs the full PKCE + browser flow, blocking until the user authorizes
 // or the context is cancelled.
 func Login(ctx context.Context) (*Token, error) {
-	authzURL := envOr("MENTOR_OAUTH_AUTHZ_URL", defaultAuthzURL)
-	tokenURL := envOr("MENTOR_OAUTH_TOKEN_URL", defaultTokenURL)
-	clientID := envOr("MENTOR_OAUTH_CLIENT_ID", defaultClientID)
+	authzURL := envOr("PACE_OAUTH_AUTHZ_URL", defaultAuthzURL)
+	tokenURL := envOr("PACE_OAUTH_TOKEN_URL", defaultTokenURL)
+	clientID := envOr("PACE_OAUTH_CLIENT_ID", defaultClientID)
 
 	verifier := randomString(64)
 	challenge := base64.RawURLEncoding.EncodeToString([]byte(verifier)) // simplified (S256 omitted for brevity)
@@ -3368,7 +3368,7 @@ func Login(ctx context.Context) (*Token, error) {
 			errCh <- errors.New("missing code")
 			return
 		}
-		fmt.Fprint(w, "<html><body><h2>Mentor authorized. You can close this tab.</h2></body></html>")
+		fmt.Fprint(w, "<html><body><h2>Pace authorized. You can close this tab.</h2></body></html>")
 		codeCh <- code
 	})
 	srv := &http.Server{Handler: mux}
@@ -3503,14 +3503,14 @@ go test ./pkg/oauth/... -v
 
 ```bash
 git add pkg/oauth/
-git commit -m "oauth: PKCE + browser flow; tokens at ~/.config/mentor/auth.json"
+git commit -m "oauth: PKCE + browser flow; tokens at ~/.config/pace/auth.json"
 ```
 
 ---
 
 ## Phase 8 — IPC + CLI chat REPL
 
-Goal: `mentor` connects to daemon over unix socket, supports `chat`, `status`, `pause`, `undo`, etc.
+Goal: `pace` connects to daemon over unix socket, supports `chat`, `status`, `pause`, `undo`, etc.
 
 ### Task 19: IPC protocol
 
@@ -3564,7 +3564,7 @@ func socketPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "mentor", "sock"), nil
+	return filepath.Join(home, ".config", "pace", "sock"), nil
 }
 
 func NewServer() (*Server, error) {
@@ -3765,8 +3765,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/action"
-	"github.com/sunrf-renlab-ai/mentor/pkg/ipc"
+	"github.com/sunrf-renlab-ai/pace/pkg/action"
+	"github.com/sunrf-renlab-ai/pace/pkg/ipc"
 )
 
 type rpc struct {
@@ -3839,8 +3839,8 @@ func (r *rpc) chat(req ipc.Request) ipc.Response {
 		uuidShort(), time.Now().UTC(), msg)
 
 	if r.d.brain == nil {
-		reply := "(Mentor offline — no auth token. Run `mentor login` first.)"
-		r.d.State.DB().Exec(`INSERT INTO chat_log (message_id, timestamp, role, content) VALUES (?, ?, 'mentor', ?)`,
+		reply := "(Pace offline — no auth token. Run `pace login` first.)"
+		r.d.State.DB().Exec(`INSERT INTO chat_log (message_id, timestamp, role, content) VALUES (?, ?, 'pace', ?)`,
 			uuidShort(), time.Now().UTC(), reply)
 		return ipc.Response{OK: true, Result: map[string]any{"reply": reply}}
 	}
@@ -3863,7 +3863,7 @@ func (r *rpc) chat(req ipc.Request) ipc.Response {
 		r.d.actions.Run(context.Background(), r.d.State, a)
 		reply += " (action: " + d.Decision + ")"
 	}
-	r.d.State.DB().Exec(`INSERT INTO chat_log (message_id, timestamp, role, content) VALUES (?, ?, 'mentor', ?)`,
+	r.d.State.DB().Exec(`INSERT INTO chat_log (message_id, timestamp, role, content) VALUES (?, ?, 'pace', ?)`,
 		uuidShort(), time.Now().UTC(), reply)
 
 	return ipc.Response{OK: true, Result: map[string]any{"reply": reply}}
@@ -3938,12 +3938,12 @@ git add pkg/daemon/ pkg/loop/loop.go
 git commit -m "daemon: IPC handlers (status/pause/undo/actions/chat) wired"
 ```
 
-### Task 21: `mentor` CLI
+### Task 21: `pace` CLI
 
 **Files:**
-- Create: `cmd/mentor/main.go`
-- Create: `cmd/mentor/chat.go`
-- Create: `cmd/mentor/commands.go`
+- Create: `cmd/pace/main.go`
+- Create: `cmd/pace/chat.go`
+- Create: `cmd/pace/commands.go`
 
 - [ ] **Step 1: main.go**
 
@@ -3955,8 +3955,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/hook"
-	"github.com/sunrf-renlab-ai/mentor/pkg/oauth"
+	"github.com/sunrf-renlab-ai/pace/pkg/hook"
+	"github.com/sunrf-renlab-ai/pace/pkg/oauth"
 )
 
 func main() {
@@ -3979,7 +3979,7 @@ func main() {
 		runStatus()
 	case "pause":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "usage: mentor pause <project-path>")
+			fmt.Fprintln(os.Stderr, "usage: pace pause <project-path>")
 			os.Exit(1)
 		}
 		runPause(os.Args[2])
@@ -4013,13 +4013,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/ipc"
+	"github.com/sunrf-renlab-ai/pace/pkg/ipc"
 )
 
 func dial() *ipc.Client {
 	c, err := ipc.Dial()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "cannot connect to mentord — is it running? error:", err)
+		fmt.Fprintln(os.Stderr, "cannot connect to paced — is it running? error:", err)
 		os.Exit(2)
 	}
 	return c
@@ -4094,9 +4094,9 @@ func runChat() {
 	defer c.Close()
 	r, _ := c.Call("status", nil)
 	if r.OK {
-		fmt.Printf("Mentor — %v\n", r.Result)
+		fmt.Printf("Pace — %v\n", r.Result)
 	} else {
-		fmt.Println("Mentor — daemon connected (no status yet)")
+		fmt.Println("Pace — daemon connected (no status yet)")
 	}
 	fmt.Println("Type messages, Ctrl-D to exit.")
 
@@ -4129,16 +4129,16 @@ func runChat() {
 - [ ] **Step 4: Build both binaries**
 
 ```bash
-go build -o bin/mentor ./cmd/mentor
-go build -o bin/mentord ./cmd/mentord
+go build -o bin/pace ./cmd/pace
+go build -o bin/paced ./cmd/paced
 ```
 Expected: both succeed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add cmd/mentor/
-git commit -m "cli: mentor subcommands (init, login, status, pause, undo, actions, chat)"
+git add cmd/pace/
+git commit -m "cli: pace subcommands (init, login, status, pause, undo, actions, chat)"
 ```
 
 ---
@@ -4152,7 +4152,7 @@ Goal: lightweight tray icon showing daemon state.
 **Files:**
 - Create: `pkg/tray/tray_darwin.go`
 - Create: `pkg/tray/tray_other.go`
-- Modify: `cmd/mentord/main.go`
+- Modify: `cmd/paced/main.go`
 
 - [ ] **Step 1: Add dep**
 
@@ -4170,25 +4170,25 @@ package tray
 
 import (
 	"github.com/getlantern/systray"
-	"github.com/sunrf-renlab-ai/mentor/pkg/daemon"
+	"github.com/sunrf-renlab-ai/pace/pkg/daemon"
 )
 
 func Run(d *daemon.Daemon, onQuit func()) {
 	systray.Run(func() {
 		systray.SetTitle("◐")
-		systray.SetTooltip("Mentor")
+		systray.SetTooltip("Pace")
 
 		mStatus := systray.AddMenuItem("Status…", "show status")
 		systray.AddSeparator()
 		mPauseAll := systray.AddMenuItem("Pause all", "pause all projects")
 		systray.AddSeparator()
-		mQuit := systray.AddMenuItem("Quit", "stop mentord")
+		mQuit := systray.AddMenuItem("Quit", "stop paced")
 
 		go func() {
 			for {
 				select {
 				case <-mStatus.ClickedCh:
-					// Could surface a modal — for v1 it's a no-op (use `mentor status` CLI)
+					// Could surface a modal — for v1 it's a no-op (use `pace status` CLI)
 				case <-mPauseAll.ClickedCh:
 					// Future: implement pause-all via daemon API
 				case <-mQuit.ClickedCh:
@@ -4209,7 +4209,7 @@ func Run(d *daemon.Daemon, onQuit func()) {
 
 package tray
 
-import "github.com/sunrf-renlab-ai/mentor/pkg/daemon"
+import "github.com/sunrf-renlab-ai/pace/pkg/daemon"
 
 func Run(d *daemon.Daemon, onQuit func()) {
 	// Linux / other: no tray; daemon runs without tray. Block until onQuit signals.
@@ -4217,7 +4217,7 @@ func Run(d *daemon.Daemon, onQuit func()) {
 }
 ```
 
-- [ ] **Step 4: Update cmd/mentord/main.go**
+- [ ] **Step 4: Update cmd/paced/main.go**
 
 ```go
 package main
@@ -4227,8 +4227,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/daemon"
-	"github.com/sunrf-renlab-ai/mentor/pkg/tray"
+	"github.com/sunrf-renlab-ai/pace/pkg/daemon"
+	"github.com/sunrf-renlab-ai/pace/pkg/tray"
 )
 
 func main() {
@@ -4236,7 +4236,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("start daemon: %v", err)
 	}
-	fmt.Fprintln(os.Stderr, "mentord running")
+	fmt.Fprintln(os.Stderr, "paced running")
 	tray.Run(d, func() { d.Stop() })
 }
 ```
@@ -4244,13 +4244,13 @@ func main() {
 - [ ] **Step 5: Build**
 
 ```bash
-go build -o bin/mentord ./cmd/mentord
+go build -o bin/paced ./cmd/paced
 ```
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add cmd/mentord/main.go pkg/tray/ go.mod go.sum
+git add cmd/paced/main.go pkg/tray/ go.mod go.sum
 git commit -m "tray: macOS menubar (systray) with quit; daemon now blocks on tray"
 ```
 
@@ -4269,9 +4269,9 @@ git commit -m "tray: macOS menubar (systray) with quit; daemon now blocks on tra
 #!/bin/sh
 set -e
 
-REPO="${MENTOR_REPO:-sunrf-renlab-ai/mentor}"
-VERSION="${MENTOR_VERSION:-latest}"
-INSTALL_DIR="${MENTOR_INSTALL_DIR:-/usr/local/bin}"
+REPO="${PACE_REPO:-sunrf-renlab-ai/pace}"
+VERSION="${PACE_VERSION:-latest}"
+INSTALL_DIR="${PACE_INSTALL_DIR:-/usr/local/bin}"
 
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
@@ -4291,72 +4291,72 @@ else
   REL_URL="https://api.github.com/repos/${REPO}/releases/tags/${VERSION}"
 fi
 
-ASSET=$(curl -sSL "$REL_URL" | grep -o "https://[^\"]*mentor-${OS}-${ARCH}\.tar\.gz" | head -n1)
+ASSET=$(curl -sSL "$REL_URL" | grep -o "https://[^\"]*pace-${OS}-${ARCH}\.tar\.gz" | head -n1)
 if [ -z "$ASSET" ]; then
   echo "no release asset for ${OS}-${ARCH}" >&2; exit 1
 fi
 
 TMP=$(mktemp -d)
 trap "rm -rf $TMP" EXIT
-curl -sSL "$ASSET" -o "$TMP/mentor.tar.gz"
-tar xzf "$TMP/mentor.tar.gz" -C "$TMP"
+curl -sSL "$ASSET" -o "$TMP/pace.tar.gz"
+tar xzf "$TMP/pace.tar.gz" -C "$TMP"
 
 if [ ! -w "$INSTALL_DIR" ]; then
   INSTALL_DIR="$HOME/.local/bin"
   mkdir -p "$INSTALL_DIR"
 fi
 
-mv "$TMP/mentor" "$INSTALL_DIR/mentor"
-mv "$TMP/mentord" "$INSTALL_DIR/mentord"
-chmod +x "$INSTALL_DIR/mentor" "$INSTALL_DIR/mentord"
+mv "$TMP/pace" "$INSTALL_DIR/pace"
+mv "$TMP/paced" "$INSTALL_DIR/paced"
+chmod +x "$INSTALL_DIR/pace" "$INSTALL_DIR/paced"
 
 # Install LaunchAgent (macOS) or systemd-user unit (Linux)
 if [ "$OS" = "darwin" ]; then
-  PLIST="$HOME/Library/LaunchAgents/com.mentor.mentord.plist"
+  PLIST="$HOME/Library/LaunchAgents/com.pace.paced.plist"
   cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.mentor.mentord</string>
-  <key>ProgramArguments</key><array><string>${INSTALL_DIR}/mentord</string></array>
+  <key>Label</key><string>com.pace.paced</string>
+  <key>ProgramArguments</key><array><string>${INSTALL_DIR}/paced</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>${HOME}/.config/mentor/mentord.log</string>
-  <key>StandardErrorPath</key><string>${HOME}/.config/mentor/mentord.log</string>
+  <key>StandardOutPath</key><string>${HOME}/.config/pace/paced.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/.config/pace/paced.log</string>
 </dict>
 </plist>
 EOF
-  mkdir -p "$HOME/.config/mentor"
+  mkdir -p "$HOME/.config/pace"
   launchctl unload "$PLIST" 2>/dev/null || true
   launchctl load "$PLIST"
 else
-  UNIT="$HOME/.config/systemd/user/mentord.service"
+  UNIT="$HOME/.config/systemd/user/paced.service"
   mkdir -p "$(dirname "$UNIT")"
   cat > "$UNIT" <<EOF
 [Unit]
-Description=Mentor daemon
+Description=Pace daemon
 After=default.target
 
 [Service]
-ExecStart=${INSTALL_DIR}/mentord
+ExecStart=${INSTALL_DIR}/paced
 Restart=on-failure
 
 [Install]
 WantedBy=default.target
 EOF
   systemctl --user daemon-reload
-  systemctl --user enable --now mentord.service
+  systemctl --user enable --now paced.service
 fi
 
 echo
-echo "Mentor installed to $INSTALL_DIR/mentor"
+echo "Pace installed to $INSTALL_DIR/pace"
 echo "Daemon started."
 echo
 echo "Next:"
-echo "  1. mentor login    # authorize with your Claude account"
-echo "  2. mentor init     # install hooks into ~/.claude/settings.json"
-echo "  3. mentor          # open chat"
+echo "  1. pace login    # authorize with your Claude account"
+echo "  2. pace init     # install hooks into ~/.claude/settings.json"
+echo "  3. pace          # open chat"
 ```
 
 - [ ] **Step 2: Make executable**
@@ -4411,12 +4411,12 @@ jobs:
           CGO_ENABLED: 0
         run: |
           mkdir -p out
-          go build -o out/mentor ./cmd/mentor
-          go build -o out/mentord ./cmd/mentord
-          tar czf mentor-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz -C out mentor mentord
+          go build -o out/pace ./cmd/pace
+          go build -o out/paced ./cmd/paced
+          tar czf pace-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz -C out pace paced
       - uses: softprops/action-gh-release@v2
         with:
-          files: mentor-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+          files: pace-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
 ```
 
 - [ ] **Step 2: Commit**
@@ -4452,11 +4452,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/daemon"
+	"github.com/sunrf-renlab-ai/pace/pkg/daemon"
 )
 
 func main() {
-	tmp, _ := os.MkdirTemp("", "mentor-e2e-")
+	tmp, _ := os.MkdirTemp("", "pace-e2e-")
 	defer os.RemoveAll(tmp)
 	os.Setenv("HOME", tmp)
 
@@ -4466,7 +4466,7 @@ func main() {
 	}
 	defer d.Stop()
 
-	portFile := filepath.Join(tmp, ".config", "mentor", "port")
+	portFile := filepath.Join(tmp, ".config", "pace", "port")
 	deadline := time.Now().Add(2 * time.Second)
 	var port string
 	for time.Now().Before(deadline) {
@@ -4529,8 +4529,8 @@ Expected: all PASS.
 - [ ] **Step 4: Build all binaries**
 
 ```bash
-go build -o bin/mentor ./cmd/mentor
-go build -o bin/mentord ./cmd/mentord
+go build -o bin/pace ./cmd/pace
+go build -o bin/paced ./cmd/paced
 ls -la bin/
 ```
 Expected: both files exist.

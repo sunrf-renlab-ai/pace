@@ -19,7 +19,7 @@ func TestStartWritesPortFileAndAcceptsEvents(t *testing.T) {
 	}
 	defer d.Stop()
 
-	portFile := filepath.Join(dir, ".config", "mentor", "port")
+	portFile := filepath.Join(dir, ".config", "pace", "port")
 	deadline := time.Now().Add(2 * time.Second)
 	var port string
 	for time.Now().Before(deadline) {
@@ -52,7 +52,7 @@ func TestStartHealthz(t *testing.T) {
 	}
 	defer d.Stop()
 
-	portFile := filepath.Join(dir, ".config", "mentor", "port")
+	portFile := filepath.Join(dir, ".config", "pace", "port")
 	var port string
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {

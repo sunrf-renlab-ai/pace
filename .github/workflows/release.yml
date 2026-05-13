@@ -29,9 +29,9 @@ jobs:
           CGO_ENABLED: 0
         run: |
           mkdir -p out
-          go build -o out/mentor ./cmd/mentor
-          go build -o out/mentord ./cmd/mentord
-          tar czf mentor-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz -C out mentor mentord
+          go build -o out/pace ./cmd/pace
+          go build -o out/paced ./cmd/paced
+          tar czf pace-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz -C out pace paced
       - uses: softprops/action-gh-release@v2
         with:
-          files: mentor-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+          files: pace-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz

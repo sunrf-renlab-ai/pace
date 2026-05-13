@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/action"
-	"github.com/sunrf-renlab-ai/mentor/pkg/ipc"
+	"github.com/sunrf-renlab-ai/pace/pkg/action"
+	"github.com/sunrf-renlab-ai/pace/pkg/ipc"
 )
 
 type rpc struct {
@@ -80,9 +80,9 @@ func (r *rpc) chat(req ipc.Request) ipc.Response {
 		uuid.New().String(), time.Now().UTC(), msg)
 
 	if r.d.brain == nil {
-		reply := "(Mentor offline — brain not configured. v0.1 runs rules-only with direct notifications. " +
+		reply := "(Pace offline — brain not configured. v0.1 runs rules-only with direct notifications. " +
 			"To enable LLM-driven decisions, wire OAuth + brain in a future build.)"
-		r.d.State.DB().Exec(`INSERT INTO chat_log (message_id, timestamp, role, content) VALUES (?, ?, 'mentor', ?)`,
+		r.d.State.DB().Exec(`INSERT INTO chat_log (message_id, timestamp, role, content) VALUES (?, ?, 'pace', ?)`,
 			uuid.New().String(), time.Now().UTC(), reply)
 		return ipc.Response{OK: true, Result: map[string]any{"reply": reply}}
 	}
@@ -98,7 +98,7 @@ func (r *rpc) chat(req ipc.Request) ipc.Response {
 		r.d.actions.Run(context.Background(), r.d.State, a)
 		reply += " (action: " + d.Decision + ")"
 	}
-	r.d.State.DB().Exec(`INSERT INTO chat_log (message_id, timestamp, role, content) VALUES (?, ?, 'mentor', ?)`,
+	r.d.State.DB().Exec(`INSERT INTO chat_log (message_id, timestamp, role, content) VALUES (?, ?, 'pace', ?)`,
 		uuid.New().String(), time.Now().UTC(), reply)
 	return ipc.Response{OK: true, Result: map[string]any{"reply": reply}}
 }

@@ -1,7 +1,7 @@
 #!/bin/sh
-# mentor-managed-hook
-# Posts the hook payload to the local mentor daemon. Fails open.
-PORT_FILE="${HOME}/.config/mentor/port"
+# pace-managed-hook
+# Posts the hook payload to the local pace daemon. Fails open.
+PORT_FILE="${HOME}/.config/pace/port"
 [ -f "$PORT_FILE" ] || exit 0
 PORT=$(cat "$PORT_FILE" 2>/dev/null)
 [ -z "$PORT" ] && exit 0

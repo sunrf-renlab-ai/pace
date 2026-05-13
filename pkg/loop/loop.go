@@ -6,9 +6,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/action"
-	"github.com/sunrf-renlab-ai/mentor/pkg/rules"
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/action"
+	"github.com/sunrf-renlab-ai/pace/pkg/rules"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 // Decider abstracts the LLM brain. nil = no LLM (degrade to direct notify).
@@ -89,7 +89,7 @@ func (l *Loop) handleTrigger(ctx context.Context, t rules.Trigger) {
 			Type:        "notify",
 			ProjectPath: t.ProjectPath,
 			Rationale:   t.Reason,
-			Params:      map[string]any{"title": "Mentor: " + t.RuleName, "body": t.Reason},
+			Params:      map[string]any{"title": "Pace: " + t.RuleName, "body": t.Reason},
 		})
 		return
 	}
@@ -100,7 +100,7 @@ func (l *Loop) handleTrigger(ctx context.Context, t rules.Trigger) {
 		l.Actions.Run(ctx, l.State, &action.Action{
 			Type:      "notify",
 			Rationale: "brain failed: " + err.Error(),
-			Params:    map[string]any{"title": "Mentor (degraded)", "body": t.Reason},
+			Params:    map[string]any{"title": "Pace (degraded)", "body": t.Reason},
 		})
 		return
 	}

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/hook"
-	"github.com/sunrf-renlab-ai/mentor/pkg/oauth"
+	"github.com/sunrf-renlab-ai/pace/pkg/hook"
+	"github.com/sunrf-renlab-ai/pace/pkg/oauth"
 )
 
 func main() {
@@ -33,7 +33,7 @@ func main() {
 		runStatus()
 	case "pause":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "usage: mentor pause <project-path>")
+			fmt.Fprintln(os.Stderr, "usage: pace pause <project-path>")
 			os.Exit(1)
 		}
 		runPause(os.Args[2])
@@ -44,7 +44,7 @@ func main() {
 	case "chat":
 		runChat()
 	case "version":
-		fmt.Println("mentor v0.1.0-alpha")
+		fmt.Println("pace v0.1.0-alpha")
 	case "help", "-h", "--help":
 		printHelp()
 	default:
@@ -62,25 +62,25 @@ func mustOK(err error) {
 }
 
 func printHelp() {
-	fmt.Println(`mentor — autonomous AI project manager for Claude Code projects
+	fmt.Println(`pace — autonomous AI project manager for Claude Code projects
 
 Usage:
-  mentor                     open chat REPL (default)
-  mentor init                install hooks into ~/.claude/settings.json
-  mentor uninstall           remove mentor hooks
-  mentor login               OAuth-authorize Mentor to use your Claude account
-  mentor logout              remove stored OAuth token
-  mentor status              show daemon status
-  mentor pause <project>     pause a project (mentor will ignore it)
-  mentor undo                undo the last mentor action
-  mentor actions             list recent mentor actions
-  mentor chat                same as bare 'mentor'
-  mentor version             print version
+  pace                     open chat REPL (default)
+  pace init                install hooks into ~/.claude/settings.json
+  pace uninstall           remove pace hooks
+  pace login               OAuth-authorize Pace to use your Claude account
+  pace logout              remove stored OAuth token
+  pace status              show daemon status
+  pace pause <project>     pause a project (pace will ignore it)
+  pace undo                undo the last pace action
+  pace actions             list recent pace actions
+  pace chat                same as bare 'pace'
+  pace version             print version
 
-If 'claude' is on PATH and authenticated, Mentor will spawn it via subprocess
-to make decisions — 'mentor login' is only needed if you want a separate token.
+If 'claude' is on PATH and authenticated, Pace will spawn it via subprocess
+to make decisions — 'pace login' is only needed if you want a separate token.
 
-The daemon (mentord) must be running. Install via the install script
+The daemon (paced) must be running. Install via the install script
 or launch manually.`)
 }
 
@@ -89,5 +89,5 @@ func tokenPathForCli() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return home + "/.config/mentor/auth.json", nil
+	return home + "/.config/pace/auth.json", nil
 }

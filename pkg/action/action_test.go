@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 type fakeNotifier struct {

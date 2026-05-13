@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 func setupTestState(t *testing.T) *state.State {

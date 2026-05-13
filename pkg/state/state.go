@@ -9,7 +9,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/state/migrations"
+	"github.com/sunrf-renlab-ai/pace/pkg/state/migrations"
 )
 
 type State struct {

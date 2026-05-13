@@ -98,8 +98,8 @@ func TestLoginFlowAgainstFakeProvider(t *testing.T) {
 	}))
 	defer tokenSrv.Close()
 
-	t.Setenv("MENTOR_OAUTH_AUTHZ_URL", authzSrv.URL+"/authorize")
-	t.Setenv("MENTOR_OAUTH_TOKEN_URL", tokenSrv.URL+"/token")
+	t.Setenv("PACE_OAUTH_AUTHZ_URL", authzSrv.URL+"/authorize")
+	t.Setenv("PACE_OAUTH_TOKEN_URL", tokenSrv.URL+"/token")
 
 	// Trigger the callback ourselves while Login is blocking.
 	go func() {

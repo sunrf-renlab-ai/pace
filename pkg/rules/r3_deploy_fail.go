@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/sunrf-renlab-ai/mentor/pkg/ingest"
-	"github.com/sunrf-renlab-ai/mentor/pkg/state"
+	"github.com/sunrf-renlab-ai/pace/pkg/ingest"
+	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 var deployCmdPattern = regexp.MustCompile(`(?i)\b(vercel deploy|render deploys|fly deploy|netlify deploy|gh workflow run|kubectl apply|terraform apply)\b`)

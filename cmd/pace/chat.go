@@ -13,14 +13,14 @@ func runChat() {
 	r, _ := c.Call("status", nil)
 	if r.OK {
 		if m, ok := r.Result.(map[string]any); ok {
-			fmt.Printf("Mentor — %v active project(s), %v event(s) today, %v action(s) today\n",
+			fmt.Printf("Pace — %v active project(s), %v event(s) today, %v action(s) today\n",
 				m["active_projects"], m["events_24h"], m["actions_24h"])
 			if b, _ := m["brain"].(bool); !b {
 				fmt.Println("(brain offline — running rules-only with direct notifications)")
 			}
 		}
 	} else {
-		fmt.Println("Mentor — daemon connected")
+		fmt.Println("Pace — daemon connected")
 	}
 	fmt.Println("Type messages, Ctrl-D to exit.")
 
