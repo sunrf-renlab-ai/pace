@@ -1,0 +1,8 @@
+bin/
+*.test
+*.out
+coverage.*
+.DS_Store
+*.db
+*.db-journal
+node_modules/

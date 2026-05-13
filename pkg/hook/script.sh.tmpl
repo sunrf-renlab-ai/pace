@@ -1,0 +1,52 @@
+#!/bin/sh
+# mentor-managed-hook
+# Posts the hook payload to the local mentor daemon. Fails open.
+PORT_FILE="${HOME}/.config/mentor/port"
+[ -f "$PORT_FILE" ] || exit 0
+PORT=$(cat "$PORT_FILE" 2>/dev/null)
+[ -z "$PORT" ] && exit 0
+
+PAYLOAD=$(cat)
+EVENT_ID=$(uuidgen 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())' 2>/dev/null || echo "fallback-$$-$(date +%s)")
+TS=$(python3 -c 'from datetime import datetime,timezone; print(datetime.now(timezone.utc).isoformat())' 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
+HOOK_TYPE="$1"
+
+ENRICHED=$(printf '%s' "$PAYLOAD" | EVENT_ID="$EVENT_ID" TS="$TS" HOOK_TYPE="$HOOK_TYPE" python3 -c "
+import json, sys, os
+try:
+    p = json.loads(sys.stdin.read() or '{}')
+except Exception:
+    p = {}
+def trunc(x, n=200):
+    if x is None: return ''
+    s = x if isinstance(x, str) else json.dumps(x)
+    return s[:n]
+tr = p.get('tool_response') or {}
+if isinstance(tr, str):
+    tr = {'text': tr}
+exit_status = 'ok'
+if isinstance(tr, dict) and (tr.get('error') or tr.get('is_error')):
+    exit_status = 'error'
+out = {
+    'event_id': os.environ.get('EVENT_ID', ''),
+    'timestamp': os.environ.get('TS', ''),
+    'hook_type': os.environ.get('HOOK_TYPE', ''),
+    'session_id': p.get('session_id', ''),
+    'project_path': p.get('cwd', os.getcwd()),
+    'tool_name': p.get('tool_name', ''),
+    'tool_input_summary': trunc(p.get('tool_input')),
+    'tool_result_summary': trunc(tr),
+    'tool_exit_status': exit_status,
+    'user_prompt_summary': trunc(p.get('prompt'), 200),
+    'stop_reason': 'turn_complete' if p.get('stop_hook_active') else '',
+}
+print(json.dumps(out))
+" 2>/dev/null)
+
+[ -z "$ENRICHED" ] && exit 0
+
+curl -s -m 0.5 -X POST -H 'Content-Type: application/json' \
+  --data "$ENRICHED" \
+  "http://127.0.0.1:${PORT}/event" >/dev/null 2>&1 &
+
+exit 0
