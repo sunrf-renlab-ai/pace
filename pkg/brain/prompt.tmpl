@@ -38,7 +38,7 @@ JUDGMENT GUIDELINES (since there are no rules to fall back on):
 
 4. BURST DETECTION — if you see 2+ tool errors in the same session within a short window, that's worth a notify (but not duplicate notifications — check RECENT ACTIONS).
 
-5. TEST/DEPLOY FAILURES — these are usually signal. Notify with the specific error if visible in tool_result_summary.
+5. TEST/DEPLOY FAILURES — these are usually signal. Notify with the specific error from the full tool_result (you see complete output, not a truncated summary — quote the actual error line).
 
 6. SUBSTANTIAL COMMITS — if EVENTS shows a `git commit` with a non-trivial change (>5 files OR substantive diff), consider triggering mentor_review on that commit. Quality > frequency: don't review every commit.
 

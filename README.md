@@ -11,7 +11,7 @@
 
 Everything is logged. Anything can be undone.
 
-**Status:** alpha (v0.6). **No hardcoded rules. Event-driven, not polling.** Hook events nudge the brain through a debouncer (5s quiet window, 30s max-wait), so brain reacts ~5 seconds after the last event in a burst rather than waiting for a 90s tick. A 30-min strategic safety tick still fires brain even on quiet days (morning standup, deadline check, drift). Per-project goals + focus + plans. Two-pass adversarial mentor mode for code review opinions you can ack or dismiss. OAuth login optional — Pace inherits your existing `claude` CLI auth via subprocess.
+**Status:** alpha (v0.7). **No hardcoded rules. Event-driven, not polling. Brain sees full payloads (no truncation). Hooks fail loud (no silent loss).** Hook events nudge the brain through a debouncer (5s quiet window, 30s max-wait), so brain reacts ~5 seconds after the last event in a burst rather than waiting for a 90s tick. A 30-min strategic safety tick still fires brain even on quiet days. Per-project goals + focus + plans. Two-pass adversarial mentor mode for code review opinions you can ack or dismiss. OAuth login optional — Pace inherits your existing `claude` CLI auth via subprocess.
 
 ---
 
@@ -209,11 +209,25 @@ pace plan
 
 Plans are stored in `~/.config/pace/plans/<date>-today.md` so you can share, edit, or pin them.
 
-## Privacy
+## Privacy & data flow (read this if you care)
 
-- Pace talks to `127.0.0.1` only — nothing leaves your machine except the LLM call your `claude` subprocess makes (which is whatever Anthropic does for you anyway).
-- Hook payloads are truncated to 200-char summaries before they hit the daemon. Pace never sees full prompts or file contents.
-- Token (if you `pace login`) is mode `0600` in your home dir.
+v0.7 trades the previous "privacy by truncation" guard for richer brain context. Be honest with yourself about what that means:
+
+- **Pace daemon sees full payloads.** Every hook event sends the *complete* tool input, tool output, and user prompt to the local daemon. They get stored in your local SQLite (`~/.config/pace/state.db`) and passed to the brain as part of each `claude -p` call. There is no truncation in the hook script anymore.
+- **Local-only by default.** All daemon traffic is `127.0.0.1`. Nothing leaves your machine except via `claude -p` subprocess calls — which use your normal Claude account, so it's the same data flow you already accepted by using Claude Code.
+- **OAuth token** (if you ran `pace login`): `~/.config/pace/auth.json`, file mode `0600`.
+
+If full payloads in your local DB make you nervous (sensitive prompts, secrets in tool output), don't run Pace yet. Future v0.8 may add per-project redaction.
+
+## Hooks fail loud (v0.7)
+
+Earlier versions made hooks fail-open: if the daemon was down, hook scripts silently exited 0 and the Claude session kept going. v0.7 reverses this: if the daemon is unreachable or returns non-2xx, hook scripts exit non-zero with a stderr message. You'll see:
+
+```
+pace-hook: $HOME/.config/pace/port missing — daemon not running
+```
+
+…in the Claude Code session output, instead of silent data loss. Cost: hook adds ~5-50ms while daemon ack's the event. If `paced` crashes you'll know within the next tool call.
 
 ## Architecture
 

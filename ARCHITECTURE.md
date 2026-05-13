@@ -65,7 +65,7 @@ Each Go package has one responsibility. All are independently testable.
 ## Key invariants
 
 1. **Daemon never writes user project files directly.** The only writes outside `~/.config/pace/` go through `spawn_session`, which is just `claude -p` — same trust boundary as the user invoking it themselves.
-2. **Hooks fail open.** The hook script POSTs with a 500ms timeout and exits 0 regardless. If `paced` is down, Claude sessions are not affected.
+2. **Hooks fail loud (v0.7).** The hook script POSTs synchronously with a 2s timeout and `exit 1` on any failure (daemon unreachable, non-2xx response). The user sees a stderr message in the Claude session — "$HOME/.config/pace/port missing — daemon not running" or similar — instead of silent data loss. Earlier versions were fail-open with a 500ms background fire-and-forget; v0.7 reverses that trade.
 3. **Actions are logged before they execute.** `actions.Run` inserts the row with `status='pending'` first, then runs the executor, then updates to `done` or `failed`. A daemon crash mid-execute leaves a forensic trace.
 4. **All timestamps are UTC at the SQL boundary.** `Loop.Once` calls `now.UTC()` before passing to rules. `ingest.store` converts incoming timestamps to UTC. This avoids lexicographic comparison failures in SQLite TEXT-stored times.
 5. **Single writer to SQLite.** The daemon is the only process that opens the DB for write. CLI talks to daemon over the socket; it never opens the DB.

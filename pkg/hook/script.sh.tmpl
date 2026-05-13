@@ -1,10 +1,17 @@
 #!/bin/sh
 # pace-managed-hook
-# Posts the hook payload to the local pace daemon. Fails open.
+# Posts the FULL hook payload to the local pace daemon.
+# v0.7: synchronous (waits for daemon ack), fail-loud (exit non-zero on failure).
 PORT_FILE="${HOME}/.config/pace/port"
-[ -f "$PORT_FILE" ] || exit 0
+if [ ! -f "$PORT_FILE" ]; then
+  echo "pace-hook: $PORT_FILE missing — daemon not running" >&2
+  exit 1
+fi
 PORT=$(cat "$PORT_FILE" 2>/dev/null)
-[ -z "$PORT" ] && exit 0
+if [ -z "$PORT" ]; then
+  echo "pace-hook: $PORT_FILE empty — daemon not initialized" >&2
+  exit 1
+fi
 
 PAYLOAD=$(cat)
 EVENT_ID=$(uuidgen 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())' 2>/dev/null || echo "fallback-$$-$(date +%s)")
@@ -17,10 +24,14 @@ try:
     p = json.loads(sys.stdin.read() or '{}')
 except Exception:
     p = {}
-def trunc(x, n=200):
-    if x is None: return ''
-    s = x if isinstance(x, str) else json.dumps(x)
-    return s[:n]
+
+def stringify(x):
+    if x is None:
+        return ''
+    if isinstance(x, str):
+        return x
+    return json.dumps(x)
+
 tr = p.get('tool_response') or {}
 if isinstance(tr, str):
     tr = {'text': tr}
@@ -34,19 +45,37 @@ out = {
     'session_id': p.get('session_id', ''),
     'project_path': p.get('cwd', os.getcwd()),
     'tool_name': p.get('tool_name', ''),
-    'tool_input_summary': trunc(p.get('tool_input')),
-    'tool_result_summary': trunc(tr),
+    # v0.7: full payloads, no truncation. Brain sees everything.
+    'tool_input': stringify(p.get('tool_input')),
+    'tool_result': stringify(tr),
     'tool_exit_status': exit_status,
-    'user_prompt_summary': trunc(p.get('prompt'), 200),
+    'user_prompt': stringify(p.get('prompt')),
     'stop_reason': 'turn_complete' if p.get('stop_hook_active') else '',
 }
 print(json.dumps(out))
 " 2>/dev/null)
 
-[ -z "$ENRICHED" ] && exit 0
+if [ -z "$ENRICHED" ]; then
+  echo "pace-hook: failed to build payload (python3 missing or stdin malformed)" >&2
+  exit 1
+fi
 
-curl -s -m 0.5 -X POST -H 'Content-Type: application/json' \
+# Synchronous POST. 2s timeout. Fail-loud on error.
+HTTP_CODE=$(curl -s -m 2 -o /dev/null -w '%{http_code}' \
+  -X POST -H 'Content-Type: application/json' \
   --data "$ENRICHED" \
-  "http://127.0.0.1:${PORT}/event" >/dev/null 2>&1 &
+  "http://127.0.0.1:${PORT}/event")
 
-exit 0
+case "$HTTP_CODE" in
+  200)
+    exit 0
+    ;;
+  000)
+    echo "pace-hook: daemon unreachable on port ${PORT}" >&2
+    exit 1
+    ;;
+  *)
+    echo "pace-hook: daemon returned HTTP ${HTTP_CODE}" >&2
+    exit 1
+    ;;
+esac
