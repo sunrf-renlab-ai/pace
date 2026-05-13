@@ -53,6 +53,43 @@ func TestIngestPostStoresEvent(t *testing.T) {
 	}
 }
 
+func TestIngestFiresOnEventCallback(t *testing.T) {
+	s := setupTestState(t)
+	h := NewHandler(s)
+	called := 0
+	h.SetOnEvent(func() { called++ })
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ev := Event{
+		EventID:     "cb-1",
+		Timestamp:   time.Now().UTC(),
+		HookType:    "PostToolUse",
+		SessionID:   "s",
+		ProjectPath: "/p",
+	}
+	body, _ := json.Marshal(ev)
+	resp, err := http.Post(srv.URL+"/event", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if called != 1 {
+		t.Errorf("OnEvent fired %d times, want 1", called)
+	}
+
+	// Bad event must NOT fire callback (store failed before commit).
+	resp, _ = http.Post(srv.URL+"/event", "application/json", bytes.NewReader([]byte("{bad")))
+	if resp.StatusCode == 200 {
+		t.Errorf("bad payload returned 200")
+	}
+	if called != 1 {
+		t.Errorf("OnEvent fired on bad payload: total=%d", called)
+	}
+}
+
 func TestIngestRejectsBadSchema(t *testing.T) {
 	s := setupTestState(t)
 	h := NewHandler(s)

@@ -64,17 +64,11 @@ func Start() (*Daemon, error) {
 		return nil, err
 	}
 
-	mux := http.NewServeMux()
-	mux.Handle("/event", ingest.NewHandler(st))
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
-	srv := &http.Server{Handler: mux, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second}
-	go srv.Serve(ln)
-
 	n := notify.New()
 	reg := action.NewRegistry(n)
 
 	// Brain wiring: try to construct one if `claude` is on PATH.
-	// v0.5: there are no rules. Without brain, the loop becomes a no-op.
+	// v0.5+: there are no rules. Without brain, the loop becomes a no-op.
 	var brn loop.Decider
 	if claudePath, err := exec.LookPath("claude"); err == nil {
 		authEnv, _ := oauth.LoadAuthEnv() // nil if no token; subprocess inherits user's claude auth
@@ -85,6 +79,16 @@ func Start() (*Daemon, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	l := loop.New(st, brn, reg)
 	l.Start(ctx)
+
+	// Wire ingest → loop: every successful event store nudges the debouncer.
+	ih := ingest.NewHandler(st)
+	ih.SetOnEvent(l.Notify)
+
+	mux := http.NewServeMux()
+	mux.Handle("/event", ih)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+	srv := &http.Server{Handler: mux, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second}
+	go srv.Serve(ln)
 
 	d := &Daemon{State: st, server: srv, listener: ln, loop: l, cancel: cancel, brain: brn, actions: reg}
 

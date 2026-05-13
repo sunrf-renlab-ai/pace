@@ -8,10 +8,16 @@ import (
 )
 
 type Handler struct {
-	state *state.State
+	state   *state.State
+	onEvent func() // optional callback fired after a successful event store
 }
 
 func NewHandler(s *state.State) *Handler { return &Handler{state: s} }
+
+// SetOnEvent registers a callback to be fired (non-blocking; in-handler) after
+// each event is successfully persisted. The daemon uses this to nudge the
+// loop's debouncer so brain reacts to new events instead of polling.
+func (h *Handler) SetOnEvent(fn func()) { h.onEvent = fn }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/event" {
@@ -34,6 +40,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := h.store(&ev); err != nil {
 		http.Error(w, "store: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if h.onEvent != nil {
+		h.onEvent()
 	}
 	w.WriteHeader(http.StatusOK)
 }

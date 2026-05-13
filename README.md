@@ -4,13 +4,14 @@
 
 `pace` is a single Go binary that runs as a background daemon on your machine. The architecture in v0.5 is intentionally rule-free:
 
-- **Hooks → events → tick** — silently injects hooks into every Claude Code session, every hook fires events into a local SQLite event log. Every ~90s, the brain (`claude -p` subprocess) gets the full event window plus all your state (active projects, goals, focus, plans, prior mentor opinions, recent actions) and decides what to do. No regex matching, no fixed schedule for "morning plan" — the brain reads the wall clock and decides.
-- **Tick output** — the brain emits 0+ actions per tick: notify on a real failure, generate a plan if it's morning and none exists, surface a mentor opinion if drift is detected, or just `ignore` (most ticks). All actions are logged in advance so a crash leaves a forensic trace, and every action has an `undo`.
-- **Manual mentor consultation** — `pace ask "..."`, `pace review [sha]`, `pace consult <project>` bypass the tick and invoke the brain in mentor mode synchronously, with the same two-pass adversarial discipline.
+- **Hooks → events → debouncer → brain** — silently injects hooks into every Claude Code session, every hook fires events into a local SQLite event log AND nudges a debouncer. The debouncer waits 5 seconds of silence after the latest event (max 30s) and then wakes the brain (`claude -p` subprocess) with the full event window + all your state (active projects, goals, focus, plans, prior mentor opinions, recent actions). A burst of 50 events in 2 seconds becomes a single brain call after debounce. No polling. No regex matching. No fixed schedule for "morning plan" — the brain reads the wall clock.
+- **Strategic safety tick** — every 30 min regardless of events, brain wakes for a "anything I missed?" pass — catches morning standup, deadlines, focus drift on quiet days.
+- **Brain output** — emits 0+ actions per call: notify on a real failure, generate a plan if it's morning and none exists, surface a mentor opinion if drift is detected, or just `ignore`. Returns `batch` if multiple things should happen at once. All actions are logged in advance so a crash leaves a forensic trace, and every action has an `undo`.
+- **Manual mentor consultation** — `pace ask "..."`, `pace review [sha]`, `pace consult <project>` bypass both the debouncer and the strategic tick, invoking brain synchronously.
 
 Everything is logged. Anything can be undone.
 
-**Status:** alpha (v0.5). **No hardcoded rules** — every event flows directly to the LLM brain, which categorizes signal vs noise itself and decides 0+ actions per tick. Per-project goals + focus + plans. Two-pass adversarial mentor mode for code review opinions you can ack or dismiss. OAuth login optional — Pace inherits your existing `claude` CLI auth via subprocess.
+**Status:** alpha (v0.6). **No hardcoded rules. Event-driven, not polling.** Hook events nudge the brain through a debouncer (5s quiet window, 30s max-wait), so brain reacts ~5 seconds after the last event in a burst rather than waiting for a 90s tick. A 30-min strategic safety tick still fires brain even on quiet days (morning standup, deadline check, drift). Per-project goals + focus + plans. Two-pass adversarial mentor mode for code review opinions you can ack or dismiss. OAuth login optional — Pace inherits your existing `claude` CLI auth via subprocess.
 
 ---
 
@@ -129,18 +130,23 @@ You can pause a project (`pace pause <path>`) to suppress notifications for it, 
 
 ## How decisions get made (v0.5: rule-free)
 
-There is no `pkg/rules`. There is no regex matching for "test fail" or "deploy fail". There is no fixed 09:00 morning standup schedule.
+There is no `pkg/rules`. There is no regex matching. There is no fixed 09:00 morning standup. The brain runs only when there's reason to:
 
-Instead, every ~90 seconds, the daemon:
-1. Pulls all events ingested since the previous tick.
-2. Builds the full state snapshot (active projects, goals, focus, recent plans, open mentor opinions, user prefs, recent actions, current wall-clock time).
-3. Calls the brain (`claude -p` subprocess) ONCE.
-4. Brain returns one of: `ignore` (most ticks — most events are noise), `notify`, `generate_plan`, `mentor_review`, `spawn_session`, `sync_files`, `pause_project`, `set_pref`, or `batch` (multiple actions in one tick).
-5. Loop expands the decision and runs each action through the registry.
+**Event-driven path (primary):**
+1. Hook event POSTs to daemon → ingest stores it → calls `loop.Notify()`.
+2. Debouncer goroutine: receive notify → wait for 5 seconds of silence (or 30s max-wait if events keep coming).
+3. When window closes, daemon:
+   - Pulls all events ingested since the previous brain run.
+   - Builds the full state snapshot (active projects, goals, focus, recent plans, open mentor opinions, user prefs, recent actions, current wall-clock time).
+   - Calls the brain (`claude -p` subprocess) ONCE.
+   - Brain returns one of: `ignore` (most events are noise), `notify`, `generate_plan`, `mentor_review`, `spawn_session`, `sync_files`, `pause_project`, `set_pref`, or `batch` (multiple actions at once).
+   - Loop expands the decision and runs each action through the registry.
 
-Why this works: the brain has the full context, so it can apply judgment that hardcoded rules can't — for example noticing that "this is the third deploy fail today on the focus project a day before the deadline" deserves a different response than "single deploy fail on a non-focus project at midnight". The prompt template tells the brain its responsibilities (signal-vs-noise, time-of-day plan generation, burst detection, mentor discipline) and trusts it to apply them.
+**Strategic safety tick (secondary):** every 30 min regardless of events, brain runs the same `Once(...)` so it can do periodic reflection (morning standup, deadline approaching, drift across hours) on quiet days.
 
-Cost: ~960 ticks/day × 1 LLM call per tick × usually short prompts → fits comfortably inside Claude Max 20x. Most ticks are `ignore` and complete in 2-5 seconds.
+Why this works: the brain has the full context, so it can apply judgment hardcoded rules can't — noticing that "this is the third deploy fail today on the focus project a day before the deadline" deserves a different response than "single deploy fail on a non-focus project at midnight". The prompt template tells the brain its responsibilities (signal-vs-noise, time-of-day plan generation, burst detection, mentor discipline) and trusts it to apply them.
+
+Cost: brain only runs when needed. A burst of 50 hook events in 2s = 1 brain call. A quiet hour = 0 brain calls (until the strategic tick at 30min). Active dev day = ~30-100 brain calls vs v0.5's ~960 polled ticks. Far inside Claude Max 20x.
 
 ## Mentor mode
 

@@ -1,15 +1,17 @@
-// Package loop is the brain-tick coordinator.
+// Package loop is the brain coordinator. v0.6 is event-driven with debouncing:
 //
-// v0.5: there are no rules. Every Tick interval (default 90s), the loop:
-//   1. Reads all events ingested since the previous tick.
-//   2. Builds the full DeciderInput (events + projects + goals + focus + plans
-//      + opinions + prefs + recent actions + current time).
-//   3. Calls Brain.Decide once.
-//   4. Expands the resulting Decision: if it's "batch", iterate sub-actions;
-//      otherwise treat as a single action.
+//   - Hook events arriving at the daemon call Loop.Notify(), which signals
+//     a debouncer goroutine.
+//   - Debouncer waits for QuietDebounce of silence after the latest signal,
+//     OR up to MaxWait since the first signal in a window — whichever first.
+//   - When the window closes, brain runs Once on every event since the
+//     previous Once.
+//   - In parallel, a much-longer Strategic ticker (default 30 min) fires
+//     Once regardless of events, so brain can do periodic reflection (morning
+//     plan generation, focus drift across hours, etc.) even on quiet days.
 //
-// Manual triggers (chat, ask, review, consult) bypass the tick entirely —
-// they call Brain.Decide synchronously with their own TriggerReason.
+// Manual triggers (chat, ask, review, consult) bypass both paths — they call
+// Brain.Decide synchronously with their own TriggerReason.
 package loop
 
 import (
@@ -53,45 +55,130 @@ type Decision struct {
 }
 
 type Loop struct {
-	State    *state.State
-	Brain    Decider
-	Actions  *action.Registry
-	Tick     time.Duration
+	State   *state.State
+	Brain   Decider
+	Actions *action.Registry
+
+	// QuietDebounce is how long the debouncer waits for "silence" after the
+	// latest event signal before firing brain. Default 5s.
+	QuietDebounce time.Duration
+	// MaxWait caps the total time the debouncer will wait from the first
+	// signal in a window before forcing a brain run, even if events keep
+	// arriving. Default 30s.
+	MaxWait time.Duration
+	// Strategic is the long-interval safety tick that fires brain regardless
+	// of events. Default 30 min.
+	Strategic time.Duration
 
 	mu       sync.Mutex
 	lastTick time.Time
+
+	notifyCh chan struct{}
 	stop     chan struct{}
 }
 
-// New constructs a brain-tick loop. The lastTick baseline is set to startup
-// time so the first tick only processes events ingested AFTER pace started
-// (no historical backfill).
+// New constructs an event-driven loop. The lastTick baseline is set to
+// startup so the first run only sees events ingested AFTER pace started.
 func New(s *state.State, b Decider, ar *action.Registry) *Loop {
 	return &Loop{
-		State:    s,
-		Brain:    b,
-		Actions:  ar,
-		Tick:     90 * time.Second,
-		lastTick: time.Now().UTC(),
+		State:         s,
+		Brain:         b,
+		Actions:       ar,
+		QuietDebounce: 5 * time.Second,
+		MaxWait:       30 * time.Second,
+		Strategic:     30 * time.Minute,
+		lastTick:      time.Now().UTC(),
+		// Buffered 1 so a signal sent while the consumer is mid-run isn't lost
+		// (Notify is non-blocking; if the buffer is full we know there's
+		// already a pending signal — coalesce it).
+		notifyCh: make(chan struct{}, 1),
 		stop:     make(chan struct{}),
 	}
 }
 
+// Notify signals that one or more new events have been ingested. Non-blocking;
+// safe to call from the HTTP ingest handler. Multiple notifies during a single
+// debounce window collapse to one brain run.
+func (l *Loop) Notify() {
+	select {
+	case l.notifyCh <- struct{}{}:
+	default:
+		// Already queued; the consumer will pick up everything it needs from SQLite.
+	}
+}
+
 func (l *Loop) Start(ctx context.Context) {
-	go func() {
-		t := time.NewTicker(l.Tick)
-		defer t.Stop()
+	go l.runDebouncer(ctx)
+	go l.runStrategicTick(ctx)
+}
+
+// runDebouncer is the primary path: react to events, but coalesce bursts.
+func (l *Loop) runDebouncer(ctx context.Context) {
+	for {
+		// Block until either the first signal of a new window arrives, or stop.
+		select {
+		case <-ctx.Done():
+			return
+		case <-l.stop:
+			return
+		case <-l.notifyCh:
+		}
+
+		// Window opened. Track:
+		//   quietTimer — resets every time another signal arrives
+		//   maxTimer   — fixed deadline from window start
+		windowStart := time.Now()
+		quietTimer := time.NewTimer(l.QuietDebounce)
+		maxTimer := time.NewTimer(l.MaxWait)
+
+	wait:
 		for {
 			select {
 			case <-ctx.Done():
+				quietTimer.Stop()
+				maxTimer.Stop()
 				return
 			case <-l.stop:
+				quietTimer.Stop()
+				maxTimer.Stop()
 				return
-			case now := <-t.C:
-				l.Once(ctx, now)
+			case <-l.notifyCh:
+				if !quietTimer.Stop() {
+					select {
+					case <-quietTimer.C:
+					default:
+					}
+				}
+				quietTimer.Reset(l.QuietDebounce)
+			case <-quietTimer.C:
+				maxTimer.Stop()
+				break wait
+			case <-maxTimer.C:
+				quietTimer.Stop()
+				log.Printf("loop: max-wait %v elapsed since first event in window, firing brain", time.Since(windowStart))
+				break wait
 			}
 		}
-	}()
+
+		l.Once(ctx, time.Now())
+	}
+}
+
+// runStrategicTick is the long-interval safety net so brain reflects even if
+// no events flow (morning standup, deadline approaching, idle drift detection).
+func (l *Loop) runStrategicTick(ctx context.Context) {
+	t := time.NewTicker(l.Strategic)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-l.stop:
+			return
+		case now := <-t.C:
+			l.Once(ctx, now)
+		}
+	}
 }
 
 func (l *Loop) Stop() {
@@ -204,6 +291,13 @@ func (l *Loop) buildTickInput(now, since time.Time, events []map[string]any) Dec
 		"events":       events,
 	}
 	evJSON, _ := json.Marshal(body)
+	// TriggerReason hints brain about why it woke up: "events" if there are
+	// new events (debouncer path), "strategic" if not (long-interval safety
+	// tick — brain should consider time-of-day plan generation, drift checks).
+	reason := "events"
+	if len(events) == 0 {
+		reason = "strategic"
+	}
 	return DeciderInput{
 		Now:               now.Format(time.RFC3339),
 		ProjectsJSON:      jsonProjects(l.State),
@@ -213,7 +307,7 @@ func (l *Loop) buildTickInput(now, since time.Time, events []map[string]any) Dec
 		OpinionsJSON:      mentor.OpinionsJSON(l.State, 20),
 		PrefsJSON:         jsonPrefs(l.State),
 		RecentActionsJSON: jsonRecentActions(l.State),
-		TriggerReason:     "tick",
+		TriggerReason:     reason,
 		EventsJSON:        string(evJSON),
 	}
 }

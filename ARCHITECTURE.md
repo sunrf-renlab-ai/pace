@@ -46,14 +46,14 @@ Each Go package has one responsibility. All are independently testable.
 | Package          | What it does |
 |------------------|-------------|
 | `pkg/state`      | Opens SQLite + runs embedded migrations. Exposes `*State` to the world. |
-| `pkg/ingest`     | HTTP `/event` endpoint; validates payload, writes to `events` table, upserts `projects`. |
+| `pkg/ingest`     | HTTP `/event` endpoint; validates payload, writes to `events` table, upserts `projects`, fires the optional `OnEvent` callback after a successful store (daemon wires this to `Loop.Notify`). |
 | `pkg/hook`       | Idempotently merges Pace's hook entries into `~/.claude/settings.json`; respects existing hooks. |
 | `pkg/brain`      | Spawns `claude -p` with a single unified prompt template, parses the JSON `Decision`. Implements `loop.Decider`. The brain is the only judgment layer — there are no rules in v0.5. Decision types include `ignore` (most common), `notify`, `generate_plan`, `mentor_review`, `spawn_session`, `sync_files`, `pause_project`, `set_pref`, and `batch` (multiple actions in one tick). 5-min subprocess timeout for code-reading reviews. |
 | `pkg/pm`         | v0.3 project-management layer: per-project goals, current focus declaration, generated plan documents. Pure data + persistence — no LLM calls. |
 | `pkg/mentor`     | v0.4 mentor layer: durable structured opinions (observation, concern, recommendation, confidence, evidence refs) with ack/dismiss lifecycle. Pure data + persistence. |
 | `pkg/action`     | Action registry + executors (`notify`, `spawn_session`, `sync_files`, `pause_project`, `set_pref`, `generate_plan`, `mentor_review`); each action logged BEFORE execution. `generate_plan` writes markdown to `~/.config/pace/plans/`. `mentor_review` saves N opinions to `mentor_opinions` and notifies once with a summary. |
 | `pkg/notify`     | OS notification backend (`osascript` on macOS, `notify-send` on Linux). Build tags. |
-| `pkg/loop`       | Brain-tick coordinator. Every 90s: pulls events since last tick from SQLite → calls brain ONCE with full state + events → expands the resulting Decision (or `batch` of decisions) into per-action runs. nil brain = no-op (no fallback in v0.5). |
+| `pkg/loop`       | Brain coordinator. v0.6 is event-driven: ingest calls `Loop.Notify()` on each event → debouncer waits 5s quiet (max 30s) → brain runs ONCE on every event since the previous run. A 30-min strategic tick fires brain regardless of events for periodic reflection. nil brain = no-op (no fallback). |
 | `pkg/ipc`        | Unix socket JSON-RPC server + client. CLI talks to daemon over this. |
 | `pkg/oauth`      | Optional PKCE flow against Anthropic OAuth endpoints (env-overridable). Tokens live at `~/.config/pace/auth.json` mode `0600`. |
 | `pkg/tray`       | macOS menubar (`getlantern/systray`); no-op on Linux. |
@@ -73,18 +73,31 @@ Each Go package has one responsibility. All are independently testable.
 
 ## Reasoning loop (the heart)
 
-v0.5 deleted `pkg/rules` entirely. Every 90 seconds, `Loop.Once(ctx, now)` does:
+v0.5 deleted `pkg/rules`. v0.6 deleted the periodic 90s tick. The loop now has two parallel goroutines:
 
+**1. Debouncer (event-driven primary path)**
+   - Blocks on `notifyCh` until the first signal of a new window arrives.
+   - Starts two timers:
+     - `quietTimer` (default 5s): resets every time another notify arrives — fires when N seconds of silence pass.
+     - `maxTimer` (default 30s): fixed deadline from window start — fires regardless if events keep streaming.
+   - When either timer fires, calls `Once(ctx, now)`.
+   - `Loop.Notify()` is non-blocking: the channel is buffered 1, so multiple notifies during a window collapse to one consumer wake-up.
+
+**2. Strategic safety tick (long-interval fallback)**
+   - `time.NewTicker(30 * time.Minute)` → fires `Once(ctx, now)` regardless of events.
+   - Catches morning standup, deadlines, focus drift on quiet days.
+
+Both paths call the same `Once(ctx, now)`:
 1. Normalize `now` to UTC and atomically advance `lastTick`.
-2. Pull all events ingested between the previous `lastTick` and `now` from SQLite (`SELECT payload_json FROM events WHERE timestamp > ? ORDER BY timestamp ASC`, capped at 200).
-3. Build a single `DeciderInput` containing: window bounds + event list, active projects, goals (`pkg/pm`), focus, recent plans, open mentor opinions (`pkg/mentor`), user prefs, recent actions, current wall-clock time, `TriggerReason: "tick"`.
+2. Pull all events ingested between the previous `lastTick` and `now` from SQLite (`SELECT payload_json FROM events WHERE timestamp > ? ORDER BY timestamp ASC`, capped at 200). For strategic ticks the event set is usually empty.
+3. Build a single `DeciderInput` containing: window bounds + event list, active projects, goals (`pkg/pm`), focus, recent plans, open mentor opinions (`pkg/mentor`), user prefs, recent actions, current wall-clock time, `TriggerReason: "events"` if events exist or `"strategic"` otherwise.
 4. Call `Brain.Decide()` ONCE.
 5. Expand the resulting `Decision`:
    - `ignore` or empty → no actions (typical case).
    - `batch` → iterate `params.actions` and recursively execute each sub-decision.
    - anything else → run a single action through the registry, with `project_path` from `params.project_path` if present.
 
-If brain is nil (no `claude` CLI on PATH and no OAuth token), the tick is a no-op. There's no rule-based fallback — judgment is brain or nothing.
+Without `claude` CLI on PATH and no OAuth token, brain is nil and `Once` short-circuits to no-op. There's no rule-based fallback — judgment is brain or nothing.
 
 The rule-free design relies on the brain prompt template (`pkg/brain/prompt.tmpl`) to encode all judgment policy: signal-vs-noise heuristics, time-of-day plan generation, burst detection, mentor discipline (two-pass adversarial), refusal-when-unsure. Adding a new pattern of behavior in v0.5+ means editing the prompt, not adding Go code.
 
