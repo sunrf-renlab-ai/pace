@@ -49,10 +49,11 @@ func (h *Handler) store(ev *Event) error {
 	}
 	defer tx.Rollback()
 
+	tsUTC := ev.Timestamp.UTC()
 	_, err = tx.Exec(`INSERT OR IGNORE INTO events
 		(event_id, timestamp, hook_type, session_id, project_path, payload_json)
 		VALUES (?, ?, ?, ?, ?, ?)`,
-		ev.EventID, ev.Timestamp, ev.HookType, ev.SessionID, ev.ProjectPath, string(payload))
+		ev.EventID, tsUTC, ev.HookType, ev.SessionID, ev.ProjectPath, string(payload))
 	if err != nil {
 		return err
 	}

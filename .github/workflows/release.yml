@@ -1,0 +1,37 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - goos: darwin
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: linux
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          mkdir -p out
+          go build -o out/mentor ./cmd/mentor
+          go build -o out/mentord ./cmd/mentord
+          tar czf mentor-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz -C out mentor mentord
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: mentor-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz

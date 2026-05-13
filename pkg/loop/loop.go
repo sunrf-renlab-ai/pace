@@ -70,6 +70,7 @@ func (l *Loop) Stop() {
 }
 
 func (l *Loop) Once(ctx context.Context, now time.Time) {
+	now = now.UTC()
 	for _, r := range l.Rules {
 		triggers, err := r.Evaluate(ctx, l.State, now)
 		if err != nil {
