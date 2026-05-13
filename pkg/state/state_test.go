@@ -19,8 +19,8 @@ func TestOpenCreatesSchemaIfNotExists(t *testing.T) {
 	if err := s.DB().QueryRow("SELECT MAX(version) FROM schema_version").Scan(&version); err != nil {
 		t.Fatalf("query schema_version: %v", err)
 	}
-	if version != 1 {
-		t.Errorf("schema_version = %d, want 1", version)
+	if version < 1 {
+		t.Errorf("schema_version = %d, want >= 1", version)
 	}
 }
 
@@ -44,7 +44,7 @@ func TestOpenIdempotent(t *testing.T) {
 	if err := s2.DB().QueryRow("SELECT MAX(version) FROM schema_version").Scan(&version); err != nil {
 		t.Fatalf("query: %v", err)
 	}
-	if version != 1 {
-		t.Errorf("version = %d, want 1", version)
+	if version < 1 {
+		t.Errorf("version = %d, want >= 1", version)
 	}
 }

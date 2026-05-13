@@ -180,11 +180,4 @@ func TestR8FiresEvery30Min(t *testing.T) {
 	}
 }
 
-// ─── All() integration ─────────────────────────────────────────
-
-func TestAllReturnsFourRules(t *testing.T) {
-	rs := All()
-	if len(rs) != 4 {
-		t.Errorf("All() = %d rules, want 4", len(rs))
-	}
-}
+// All()-count assertion lives in r9_r10_test.go now (6 rules in v0.3).

@@ -43,8 +43,18 @@ func main() {
 		runActions()
 	case "chat":
 		runChat()
+	case "plan":
+		runPlan(os.Args[2:])
+	case "standup":
+		runStandup()
+	case "focus":
+		runFocus(os.Args[2:])
+	case "goal":
+		runGoal(os.Args[2:])
+	case "goals":
+		runGoals()
 	case "version":
-		fmt.Println("pace v0.1.0-alpha")
+		fmt.Println("pace v0.3.0")
 	case "help", "-h", "--help":
 		printHelp()
 	default:
@@ -64,18 +74,37 @@ func mustOK(err error) {
 func printHelp() {
 	fmt.Println(`pace — autonomous AI project manager for Claude Code projects
 
-Usage:
-  pace                     open chat REPL (default)
-  pace init                install hooks into ~/.claude/settings.json
-  pace uninstall           remove pace hooks
-  pace login               OAuth-authorize Pace to use your Claude account
-  pace logout              remove stored OAuth token
-  pace status              show daemon status
-  pace pause <project>     pause a project (pace will ignore it)
-  pace undo                undo the last pace action
-  pace actions             list recent pace actions
-  pace chat                same as bare 'pace'
-  pace version             print version
+USAGE
+  pace                                     open chat REPL (default)
+
+INSTALL / AUTH
+  pace init                                install hooks into ~/.claude/settings.json
+  pace uninstall                           remove pace hooks
+  pace login                               OAuth-authorize Pace (optional)
+  pace logout                              remove stored OAuth token
+
+DAILY OPS
+  pace status                              show daemon status
+  pace actions                             list recent pace actions
+  pace undo                                reverse the last pace action
+  pace pause <project-path>                pause a project (pace will ignore it)
+
+PROJECT MANAGEMENT (v0.3)
+  pace plan                                show today's latest plan
+  pace plan generate                       brain generates a fresh plan now
+  pace standup                             one-line morning brief (alias for plan)
+  pace focus                               show current focus
+  pace focus <project> [--reason "..."]    set this week's focus project
+                          [--until DATE]
+  pace focus clear                         clear focus
+  pace goal                                list all project goals
+  pace goal <project>                      show one project's goal
+  pace goal <project> "<description>"      set/update a goal
+                          [--deadline DATE]
+  pace goal <project> --delete             remove a goal
+  pace goals                               list all goals (alias)
+
+DATE format: YYYY-MM-DD or full RFC3339.
 
 If 'claude' is on PATH and authenticated, Pace will spawn it via subprocess
 to make decisions — 'pace login' is only needed if you want a separate token.

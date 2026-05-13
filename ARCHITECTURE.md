@@ -48,16 +48,17 @@ Each Go package has one responsibility. All are independently testable.
 | `pkg/state`      | Opens SQLite + runs embedded migrations. Exposes `*State` to the world. |
 | `pkg/ingest`     | HTTP `/event` endpoint; validates payload, writes to `events` table, upserts `projects`. |
 | `pkg/hook`       | Idempotently merges Pace's hook entries into `~/.claude/settings.json`; respects existing hooks. |
-| `pkg/rules`      | Pure-Go heuristics. Each `Rule.Evaluate(state, now)` returns 0+ `Trigger`s. v0.2 ships R1, R2, R3, R8. |
-| `pkg/brain`      | Spawns `claude -p` with a packaged prompt, parses the JSON `Decision`. Implements `loop.Decider`. |
-| `pkg/action`     | Action registry + executors (`notify`, `spawn_session`, `sync_files`, `pause_project`, `set_pref`); each action is logged BEFORE it executes so a crash leaves a trace. |
+| `pkg/rules`      | Pure-Go heuristics. Each `Rule.Evaluate(state, now)` returns 0+ `Trigger`s. v0.3 ships R1, R2, R3, R8, R9 (morning standup), R10 (focus drift). |
+| `pkg/brain`      | Spawns `claude -p` with a packaged prompt, parses the JSON `Decision`. Implements `loop.Decider`. The prompt now includes goals + focus + recent plans so brain can do proactive planning, not just reactive triage. |
+| `pkg/pm`         | v0.3 project-management layer: per-project goals, current focus declaration, generated plan documents. Pure data + persistence — no LLM calls. |
+| `pkg/action`     | Action registry + executors (`notify`, `spawn_session`, `sync_files`, `pause_project`, `set_pref`, `generate_plan`); each action is logged BEFORE it executes so a crash leaves a trace. `generate_plan` writes the plan to `~/.config/pace/plans/<date>-<scope>.md` and to the `plans` table. |
 | `pkg/notify`     | OS notification backend (`osascript` on macOS, `notify-send` on Linux). Build tags. |
 | `pkg/loop`       | Glues rules → brain → action with a 30-second ticker. Degrades to direct notify when brain is nil. |
 | `pkg/ipc`        | Unix socket JSON-RPC server + client. CLI talks to daemon over this. |
 | `pkg/oauth`      | Optional PKCE flow against Anthropic OAuth endpoints (env-overridable). Tokens live at `~/.config/pace/auth.json` mode `0600`. |
 | `pkg/tray`       | macOS menubar (`getlantern/systray`); no-op on Linux. |
 | `pkg/daemon`     | Composition root: opens state, binds ephemeral HTTP port, writes the port file, wires loop+brain+actions+IPC. |
-| `cmd/pace`     | CLI: `init`, `login`, `status`, `pause`, `undo`, `actions`, `chat`. |
+| `cmd/pace`     | CLI: `init`, `login`, `status`, `pause`, `undo`, `actions`, `chat`, plus v0.3 `plan`, `standup`, `focus`, `goal`, `goals`. |
 | `cmd/paced`    | Daemon entrypoint. Calls `daemon.Start()`, runs tray (macOS) or waits on signals. |
 | `cmd/e2e`        | Smoke harness: spins up daemon, posts a synthetic event, verifies it lands in SQLite. |
 

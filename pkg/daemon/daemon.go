@@ -96,6 +96,15 @@ func Start() (*Daemon, error) {
 		sock.Handle("undo", r.undo)
 		sock.Handle("actions", r.actions)
 		sock.Handle("chat", r.chat)
+		// v0.3 PM handlers
+		sock.Handle("goal.set", r.goalSet)
+		sock.Handle("goal.get", r.goalGet)
+		sock.Handle("goal.delete", r.goalDelete)
+		sock.Handle("focus.set", r.focusSet)
+		sock.Handle("focus.get", r.focusGet)
+		sock.Handle("focus.clear", r.focusClear)
+		sock.Handle("plan.show", r.planShow)
+		sock.Handle("plan.generate", r.planGenerate)
 		go sock.Serve()
 		d.ipc = sock
 	}

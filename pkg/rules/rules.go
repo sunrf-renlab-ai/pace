@@ -28,6 +28,8 @@ func All() []Rule {
 		&R2TestFail{},
 		&R3DeployFail{},
 		&R8PeriodicOverview{},
+		&R9MorningStandup{},
+		&R10FocusDrift{},
 	}
 }
 

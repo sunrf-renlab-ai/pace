@@ -1,12 +1,15 @@
 # Pace
 
-> **Autonomous AI project manager for developers running many parallel Claude Code projects.** Watches every session, decides what matters, takes action — uses your existing Claude subscription, no API key.
+> **Autonomous AI project manager for developers running many parallel Claude Code projects.** Watches every session, plans your day, decides what matters, takes action — uses your existing Claude subscription, no API key.
 
-`pace` is a single Go binary that runs as a background daemon on your machine. It silently injects hooks into every Claude Code session, ingests the events, runs them through cheap local rules first, and only then decides whether to invoke your LLM (`claude -p` subprocess) for a richer judgment. When something matters, it takes action: a macOS notification, a cross-project sync note, or even spawning a helper Claude session in another project.
+`pace` is a single Go binary that runs as a background daemon on your machine. It does two things simultaneously:
+
+- **Reactive** — silently injects hooks into every Claude Code session, ingests the events, runs them through cheap local rules first, and only then decides whether to invoke your LLM (`claude -p` subprocess) for a richer judgment. When something matters (test fail, deploy fail, repeated errors, drift from your declared focus), it takes action: a macOS notification, a cross-project sync note, or spawning a helper Claude session in another project.
+- **Proactive** — knows each project's goal + deadline + your declared focus. Generates a real markdown plan every morning ("today, do X first because of Y; B is blocked on A; C has a deadline this Friday") and stores it. `pace plan` shows it. `pace standup` gives you a brief.
 
 Everything is logged. Anything can be undone.
 
-**Status:** alpha (v0.2). Core loop is solid; LLM brain is wired; OAuth login is scaffolded but optional (Pace inherits your existing `claude` CLI auth via subprocess).
+**Status:** alpha (v0.3). 6 rules, LLM brain, OAuth login (optional — Pace inherits your existing `claude` CLI auth via subprocess), per-project goals, focus declarations, and morning plan generation.
 
 ---
 
@@ -66,16 +69,36 @@ Got it. Setting prefs: agora.deploy_retry_notify=false.
 ## CLI commands
 
 ```
-pace                      open chat (default)
-pace init                 install hooks into ~/.claude/settings.json
-pace uninstall            remove pace hooks
-pace login                OAuth-authorize Pace (optional — see "Auth" below)
-pace logout               remove stored OAuth token
-pace status               show daemon status (active projects, event/action counts)
-pace pause <project>      pause a project (pace will ignore it)
-pace undo                 reverse the last pace action
-pace actions              list recent pace actions
-pace version              print version
+pace                                     open chat (default)
+
+# install / auth
+pace init                                install hooks into ~/.claude/settings.json
+pace uninstall                           remove pace hooks
+pace login                               OAuth-authorize Pace (optional — see "Auth")
+pace logout                              remove stored OAuth token
+
+# daily ops
+pace status                              show daemon status
+pace actions                             list recent pace actions
+pace undo                                reverse the last pace action
+pace pause <project>                     pause a project (pace will ignore it)
+
+# project management (v0.3)
+pace plan                                show today's plan
+pace plan generate                       brain generates a fresh plan now
+pace standup                             one-line morning brief
+pace focus                               show current focus
+pace focus <project> [--reason "..."]    set this week's focus project
+              [--until DATE]
+pace focus clear                         clear focus
+pace goal                                list all project goals
+pace goal <project>                      show one project's goal
+pace goal <project> "<description>"      set/update a goal
+              [--deadline DATE]
+pace goal <project> --delete             remove a goal
+pace goals                               alias for `pace goal`
+
+pace version                             print version
 ```
 
 ## Auth
@@ -93,9 +116,7 @@ Pace scans every project where a Claude session has run. The first event from a 
 
 You can pause a project (`pace pause <path>`) to suppress notifications for it, or `pace pause <path> --until 2026-06-13` to set a date.
 
-## Rules (v0.2)
-
-Initial rule set:
+## Rules (v0.3)
 
 | Rule | Fires when |
 |------|-----------|
@@ -103,8 +124,40 @@ Initial rule set:
 | **R2** Test fail | A test command (`go test`, `npm test`, `pytest`, …) exited non-zero |
 | **R3** Deploy fail | A deploy command (`vercel deploy`, `fly deploy`, …) exited non-zero |
 | **R8** Periodic overview | Every 30 minutes, a "any blind spots?" sweep |
+| **R9** Morning standup | Once per day at 09:00 local — brain generates today's plan |
+| **R10** Focus drift | You declared focus on A, but the past hour has 3× more activity on B |
 
 R4–R7 (cross-project schema drift, stale uncommitted changes, etc.) are roadmap.
+
+## Project management
+
+Pace is not just reactive. You can give it goals + focus, and it generates real plans:
+
+```bash
+# Tell pace what each project is for + when it's due
+pace goal /Users/blink/project/pair "ship dual-agent simulator MVP" --deadline 2026-06-01
+pace goal /Users/blink/project/agora "fix auth race condition reported in INC-247"
+
+# Tell it where your attention is this week
+pace focus /Users/blink/project/pair --reason "release this Friday" --until 2026-05-20
+
+# At 9 AM (or anytime via `pace plan generate`) it writes a real plan
+pace plan
+# →
+# # Today's Plan — Wed 2026-05-13
+# **Focus this week:** /Users/blink/project/pair — release this Friday
+#
+# ## 1. ⭐ pair — ship dual-agent simulator MVP  (focus, deadline 2026-06-01)
+# Today: finish the SVG radar component, hook up the report extractor.
+# Blockers: orchestrator on Render needs 3 env vars set before integration test.
+#
+# ## 2. agora — fix auth race condition INC-247
+# Today: add the regression test, then patch. ~2hr.
+#
+# ## 3. socialmind — paused until 2026-06-13 (skipped)
+```
+
+Plans are stored in `~/.config/pace/plans/<date>-today.md` so you can share, edit, or pin them.
 
 ## Privacy
 
