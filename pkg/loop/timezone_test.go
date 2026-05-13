@@ -2,49 +2,41 @@ package loop
 
 import (
 	"context"
-	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sunrf-renlab-ai/pace/pkg/action"
 	"github.com/sunrf-renlab-ai/pace/pkg/ingest"
-	"github.com/sunrf-renlab-ai/pace/pkg/rules"
-	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
 // Regression test: SQLite stores time.Time in TZ-suffixed text. Local-tz `now`
 // vs UTC-stored event timestamps caused lexicographic comparison failures and
-// silently dropped events from rule windows. Loop.Once must normalize to UTC.
-func TestOnceUTCNormalizesNow(t *testing.T) {
-	s, _ := state.Open(t.TempDir() + "/db")
-	defer s.Close()
+// silently dropped events from the tick window. Loop.Once must normalize to UTC.
+func TestTickEventQueryUTCNormalized(t *testing.T) {
+	s := newState(t)
 
 	utcNow := time.Now().UTC()
-	for i := 0; i < 2; i++ {
-		ev := ingest.Event{
-			EventID:        "tz-" + string(rune('0'+i)),
-			Timestamp:      utcNow,
-			HookType:       "PostToolUse",
-			SessionID:      "tz-test",
-			ProjectPath:    "/p",
-			ToolExitStatus: "error",
-		}
-		pj, _ := json.Marshal(ev)
-		s.DB().Exec(`INSERT INTO events (event_id, timestamp, hook_type, session_id, project_path, payload_json) VALUES (?, ?, ?, ?, ?, ?)`,
-			ev.EventID, ev.Timestamp.UTC(), ev.HookType, ev.SessionID, ev.ProjectPath, string(pj))
-	}
+	insertEvent(t, s, ingest.Event{
+		EventID:        "tz-1",
+		Timestamp:      utcNow,
+		HookType:       "PostToolUse",
+		SessionID:      "tz-test",
+		ProjectPath:    "/p",
+		ToolExitStatus: "error",
+	})
 
-	fn := &fakeNotifier{}
-	reg := action.NewRegistry(fn)
-	l := New(s, []rules.Rule{&rules.R1ToolErrorBurst{}}, nil, reg)
-
-	// Pass a *local-tz* now. If Once doesn't normalize, the rule's `since` will
-	// be in local TZ and the events won't compare correctly.
+	br := &fakeBrain{d: &Decision{Decision: "ignore"}}
+	l := New(s, br, action.NewRegistry(&fakeNotifier{}))
+	// Force lastTick into the past in *local* TZ. If eventsSince doesn't
+	// normalize, the SQL comparison would compare local-tz strings against
+	// UTC-stored strings and miss the event.
 	beijing, _ := time.LoadLocation("Asia/Shanghai")
-	localNow := utcNow.In(beijing)
-	l.Once(context.Background(), localNow)
+	l.lastTick = utcNow.Add(-time.Hour).In(beijing)
 
-	if fn.count != 1 {
-		t.Errorf("notify count = %d, want 1 (R1 should fire after UTC normalization)", fn.count)
+	l.Once(context.Background(), utcNow.Add(time.Minute))
+
+	if !strings.Contains(br.lastInput.EventsJSON, "tz-1") {
+		t.Errorf("brain didn't see event tz-1 across TZ boundary; got %s", br.lastInput.EventsJSON)
 	}
 }

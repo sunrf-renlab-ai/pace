@@ -2,14 +2,15 @@
 
 > **Autonomous AI project manager for developers running many parallel Claude Code projects.** Watches every session, plans your day, decides what matters, takes action — uses your existing Claude subscription, no API key.
 
-`pace` is a single Go binary that runs as a background daemon on your machine. It does two things simultaneously:
+`pace` is a single Go binary that runs as a background daemon on your machine. The architecture in v0.5 is intentionally rule-free:
 
-- **Reactive** — silently injects hooks into every Claude Code session, ingests the events, runs them through cheap local rules first, and only then decides whether to invoke your LLM (`claude -p` subprocess) for a richer judgment. When something matters (test fail, deploy fail, repeated errors, drift from your declared focus), it takes action: a macOS notification, a cross-project sync note, or spawning a helper Claude session in another project.
-- **Proactive** — knows each project's goal + deadline + your declared focus. Generates a real markdown plan every morning ("today, do X first because of Y; B is blocked on A; C has a deadline this Friday") and stores it. `pace plan` shows it. `pace standup` gives you a brief.
+- **Hooks → events → tick** — silently injects hooks into every Claude Code session, every hook fires events into a local SQLite event log. Every ~90s, the brain (`claude -p` subprocess) gets the full event window plus all your state (active projects, goals, focus, plans, prior mentor opinions, recent actions) and decides what to do. No regex matching, no fixed schedule for "morning plan" — the brain reads the wall clock and decides.
+- **Tick output** — the brain emits 0+ actions per tick: notify on a real failure, generate a plan if it's morning and none exists, surface a mentor opinion if drift is detected, or just `ignore` (most ticks). All actions are logged in advance so a crash leaves a forensic trace, and every action has an `undo`.
+- **Manual mentor consultation** — `pace ask "..."`, `pace review [sha]`, `pace consult <project>` bypass the tick and invoke the brain in mentor mode synchronously, with the same two-pass adversarial discipline.
 
 Everything is logged. Anything can be undone.
 
-**Status:** alpha (v0.4). 8 rules, LLM brain in three modes (reactive / proactive PM / **mentor**), per-project goals + focus + plans, two-pass adversarial code review producing evidence-grounded opinions you can ack or dismiss. OAuth login optional — Pace inherits your existing `claude` CLI auth via subprocess.
+**Status:** alpha (v0.5). **No hardcoded rules** — every event flows directly to the LLM brain, which categorizes signal vs noise itself and decides 0+ actions per tick. Per-project goals + focus + plans. Two-pass adversarial mentor mode for code review opinions you can ack or dismiss. OAuth login optional — Pace inherits your existing `claude` CLI auth via subprocess.
 
 ---
 
@@ -118,7 +119,7 @@ Pace's brain shells out to `claude -p` to make decisions. There are two ways for
 1. **Inherit from your existing `claude` CLI** *(recommended, default)* — if you've already run `claude setup-token` (you have, if you use Claude Code), the subprocess Just Works. Pace adds no setup overhead.
 2. **`pace login`** *(optional)* — runs an OAuth PKCE flow against Anthropic's endpoints, stores a separate token in `~/.config/pace/auth.json`. Useful if you want to scope a Pace-specific token.
 
-If neither is configured, Pace still runs — the loop degrades to direct rule-triggered notifications without LLM judgment. You see less, but it's not broken.
+If neither is configured, the tick loop becomes a no-op (events still ingest; no decisions get made). v0.5 has no rule-based fallback — without brain there is no judgment at all.
 
 ## What gets watched
 
@@ -126,24 +127,24 @@ Pace scans every project where a Claude session has run. The first event from a 
 
 You can pause a project (`pace pause <path>`) to suppress notifications for it, or `pace pause <path> --until 2026-06-13` to set a date.
 
-## Rules (v0.4)
+## How decisions get made (v0.5: rule-free)
 
-| Rule | Mode | Fires when |
-|------|------|-----------|
-| **R1** Tool error burst | reactive | Same session, 2+ tool errors within 5 min |
-| **R2** Test fail | reactive | A test command (`go test`, `npm test`, `pytest`, …) exited non-zero |
-| **R3** Deploy fail | reactive | A deploy command (`vercel deploy`, `fly deploy`, …) exited non-zero |
-| **R8** Periodic overview | reactive | Every 30 min, "any blind spots?" sweep |
-| **R9** Morning standup | proactive PM | Once per day at 09:00 local — brain generates today's plan |
-| **R10** Focus drift | proactive PM | You declared focus on A, but the past hour has 3× more activity on B |
-| **R11** Commit review | **mentor** | Substantial commit detected (>5 files or >200 LOC) — triggers code review |
-| **R15** Mentor pulse | **mentor** | Every 2 hours, strategic review across all projects |
+There is no `pkg/rules`. There is no regex matching for "test fail" or "deploy fail". There is no fixed 09:00 morning standup schedule.
 
-R4–R7 + R12-R14 (cross-project schema drift, stale uncommitted, new abstraction nudge, etc.) are roadmap.
+Instead, every ~90 seconds, the daemon:
+1. Pulls all events ingested since the previous tick.
+2. Builds the full state snapshot (active projects, goals, focus, recent plans, open mentor opinions, user prefs, recent actions, current wall-clock time).
+3. Calls the brain (`claude -p` subprocess) ONCE.
+4. Brain returns one of: `ignore` (most ticks — most events are noise), `notify`, `generate_plan`, `mentor_review`, `spawn_session`, `sync_files`, `pause_project`, `set_pref`, or `batch` (multiple actions in one tick).
+5. Loop expands the decision and runs each action through the registry.
 
-## Mentor mode (v0.4)
+Why this works: the brain has the full context, so it can apply judgment that hardcoded rules can't — for example noticing that "this is the third deploy fail today on the focus project a day before the deadline" deserves a different response than "single deploy fail on a non-focus project at midnight". The prompt template tells the brain its responsibilities (signal-vs-noise, time-of-day plan generation, burst detection, mentor discipline) and trusts it to apply them.
 
-Pace is also your senior engineer. When R11/R15 fire (or you ask via CLI), brain runs in **mentor mode** with a stricter contract:
+Cost: ~960 ticks/day × 1 LLM call per tick × usually short prompts → fits comfortably inside Claude Max 20x. Most ticks are `ignore` and complete in 2-5 seconds.
+
+## Mentor mode
+
+Pace is also your senior engineer. When the brain decides to emit `mentor_review` (or you trigger one via CLI), it follows a stricter contract:
 
 1. **Initial review** — brain reads the trigger context, may use file tools to read code, and lists 1-5 candidate observations. Each has: topic, observation (with evidence), concern, recommendation, confidence label, evidence refs.
 2. **Adversarial pass** — brain plays devil's advocate against each candidate: is this a nitpick? Does the recommendation make code worse? Did I miss context? Am I just pattern-matching?

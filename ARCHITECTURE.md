@@ -48,13 +48,12 @@ Each Go package has one responsibility. All are independently testable.
 | `pkg/state`      | Opens SQLite + runs embedded migrations. Exposes `*State` to the world. |
 | `pkg/ingest`     | HTTP `/event` endpoint; validates payload, writes to `events` table, upserts `projects`. |
 | `pkg/hook`       | Idempotently merges Pace's hook entries into `~/.claude/settings.json`; respects existing hooks. |
-| `pkg/rules`      | Pure-Go heuristics. Each `Rule.Evaluate(state, now)` returns 0+ `Trigger`s. v0.4 ships R1, R2, R3, R8, R9, R10, R11 (commit review), R15 (mentor pulse). |
-| `pkg/brain`      | Spawns `claude -p` with a packaged prompt, parses the JSON `Decision`. Implements `loop.Decider`. The prompt has three modes: reactive (R1-3, R8), proactive PM (R9, R10), **mentor** (R11, R15, cli:ask/review/consult) — mentor mode runs an adversarial self-critique pass and outputs only opinions that survive. 5-min subprocess timeout for code-reading reviews. |
+| `pkg/brain`      | Spawns `claude -p` with a single unified prompt template, parses the JSON `Decision`. Implements `loop.Decider`. The brain is the only judgment layer — there are no rules in v0.5. Decision types include `ignore` (most common), `notify`, `generate_plan`, `mentor_review`, `spawn_session`, `sync_files`, `pause_project`, `set_pref`, and `batch` (multiple actions in one tick). 5-min subprocess timeout for code-reading reviews. |
 | `pkg/pm`         | v0.3 project-management layer: per-project goals, current focus declaration, generated plan documents. Pure data + persistence — no LLM calls. |
 | `pkg/mentor`     | v0.4 mentor layer: durable structured opinions (observation, concern, recommendation, confidence, evidence refs) with ack/dismiss lifecycle. Pure data + persistence. |
 | `pkg/action`     | Action registry + executors (`notify`, `spawn_session`, `sync_files`, `pause_project`, `set_pref`, `generate_plan`, `mentor_review`); each action logged BEFORE execution. `generate_plan` writes markdown to `~/.config/pace/plans/`. `mentor_review` saves N opinions to `mentor_opinions` and notifies once with a summary. |
 | `pkg/notify`     | OS notification backend (`osascript` on macOS, `notify-send` on Linux). Build tags. |
-| `pkg/loop`       | Glues rules → brain → action with a 30-second ticker. Degrades to direct notify when brain is nil. |
+| `pkg/loop`       | Brain-tick coordinator. Every 90s: pulls events since last tick from SQLite → calls brain ONCE with full state + events → expands the resulting Decision (or `batch` of decisions) into per-action runs. nil brain = no-op (no fallback in v0.5). |
 | `pkg/ipc`        | Unix socket JSON-RPC server + client. CLI talks to daemon over this. |
 | `pkg/oauth`      | Optional PKCE flow against Anthropic OAuth endpoints (env-overridable). Tokens live at `~/.config/pace/auth.json` mode `0600`. |
 | `pkg/tray`       | macOS menubar (`getlantern/systray`); no-op on Linux. |
@@ -74,21 +73,20 @@ Each Go package has one responsibility. All are independently testable.
 
 ## Reasoning loop (the heart)
 
-Every 30 seconds, `Loop.Once(ctx, now)` does:
+v0.5 deleted `pkg/rules` entirely. Every 90 seconds, `Loop.Once(ctx, now)` does:
 
-1. Normalize `now` to UTC.
-2. For each rule in `rules.All()`:
-   - `triggers := rule.Evaluate(ctx, state, now)`
-   - For each trigger:
-     - If brain is nil, run a `notify` action directly with the trigger's reason as the body. Done.
-     - Otherwise, build a `DeciderInput` (current projects, user prefs, recent actions, trigger context), call `brain.Decide()`, parse the `Decision`, and run the corresponding action.
+1. Normalize `now` to UTC and atomically advance `lastTick`.
+2. Pull all events ingested between the previous `lastTick` and `now` from SQLite (`SELECT payload_json FROM events WHERE timestamp > ? ORDER BY timestamp ASC`, capped at 200).
+3. Build a single `DeciderInput` containing: window bounds + event list, active projects, goals (`pkg/pm`), focus, recent plans, open mentor opinions (`pkg/mentor`), user prefs, recent actions, current wall-clock time, `TriggerReason: "tick"`.
+4. Call `Brain.Decide()` ONCE.
+5. Expand the resulting `Decision`:
+   - `ignore` or empty → no actions (typical case).
+   - `batch` → iterate `params.actions` and recursively execute each sub-decision.
+   - anything else → run a single action through the registry, with `project_path` from `params.project_path` if present.
 
-Rules in v0.2:
+If brain is nil (no `claude` CLI on PATH and no OAuth token), the tick is a no-op. There's no rule-based fallback — judgment is brain or nothing.
 
-- **R1** (`r1_tool_error.go`) — same session, ≥2 PostToolUse events with `tool_exit_status=error` within 5 min.
-- **R2** (`r2_test_fail.go`) — PostToolUse where the command matches a test runner regex AND exit status is error, within 2 min.
-- **R3** (`r3_deploy_fail.go`) — PostToolUse where the command matches a deploy command regex AND exit status is error, within 2 min.
-- **R8** (`r8_overview.go`) — every 30 min, fire a "strategic sweep" trigger so the brain can look across all projects.
+The rule-free design relies on the brain prompt template (`pkg/brain/prompt.tmpl`) to encode all judgment policy: signal-vs-noise heuristics, time-of-day plan generation, burst detection, mentor discipline (two-pass adversarial), refusal-when-unsure. Adding a new pattern of behavior in v0.5+ means editing the prompt, not adding Go code.
 
 ## Auth model
 

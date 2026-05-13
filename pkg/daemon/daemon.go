@@ -18,7 +18,6 @@ import (
 	"github.com/sunrf-renlab-ai/pace/pkg/loop"
 	"github.com/sunrf-renlab-ai/pace/pkg/notify"
 	"github.com/sunrf-renlab-ai/pace/pkg/oauth"
-	"github.com/sunrf-renlab-ai/pace/pkg/rules"
 	"github.com/sunrf-renlab-ai/pace/pkg/state"
 )
 
@@ -74,8 +73,8 @@ func Start() (*Daemon, error) {
 	n := notify.New()
 	reg := action.NewRegistry(n)
 
-	// Brain wiring: try to construct one if `claude` is on PATH. If not found,
-	// brain stays nil and loop degrades to direct notify on rule trigger.
+	// Brain wiring: try to construct one if `claude` is on PATH.
+	// v0.5: there are no rules. Without brain, the loop becomes a no-op.
 	var brn loop.Decider
 	if claudePath, err := exec.LookPath("claude"); err == nil {
 		authEnv, _ := oauth.LoadAuthEnv() // nil if no token; subprocess inherits user's claude auth
@@ -84,7 +83,7 @@ func Start() (*Daemon, error) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	l := loop.New(st, rules.All(), brn, reg)
+	l := loop.New(st, brn, reg)
 	l.Start(ctx)
 
 	d := &Daemon{State: st, server: srv, listener: ln, loop: l, cancel: cancel, brain: brn, actions: reg}
