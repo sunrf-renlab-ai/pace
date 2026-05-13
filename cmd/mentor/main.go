@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/sunrf-renlab-ai/mentor/pkg/hook"
+	"github.com/sunrf-renlab-ai/mentor/pkg/oauth"
 )
 
 func main() {
@@ -19,6 +21,14 @@ func main() {
 	case "uninstall":
 		mustOK(hook.Uninstall())
 		fmt.Println("hooks removed")
+	case "login":
+		t, err := oauth.Login(context.Background())
+		mustOK(err)
+		fmt.Printf("authenticated; token saved (expires in %ds)\n", t.ExpiresIn)
+	case "logout":
+		p, _ := tokenPathForCli()
+		os.Remove(p)
+		fmt.Println("logged out (token removed)")
 	case "status":
 		runStatus()
 	case "pause":
@@ -58,6 +68,8 @@ Usage:
   mentor                     open chat REPL (default)
   mentor init                install hooks into ~/.claude/settings.json
   mentor uninstall           remove mentor hooks
+  mentor login               OAuth-authorize Mentor to use your Claude account
+  mentor logout              remove stored OAuth token
   mentor status              show daemon status
   mentor pause <project>     pause a project (mentor will ignore it)
   mentor undo                undo the last mentor action
@@ -65,6 +77,17 @@ Usage:
   mentor chat                same as bare 'mentor'
   mentor version             print version
 
+If 'claude' is on PATH and authenticated, Mentor will spawn it via subprocess
+to make decisions — 'mentor login' is only needed if you want a separate token.
+
 The daemon (mentord) must be running. Install via the install script
 or launch manually.`)
+}
+
+func tokenPathForCli() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return home + "/.config/mentor/auth.json", nil
 }

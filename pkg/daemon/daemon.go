@@ -9,11 +9,15 @@ import (
 	"path/filepath"
 	"time"
 
+	"os/exec"
+
 	"github.com/sunrf-renlab-ai/mentor/pkg/action"
+	"github.com/sunrf-renlab-ai/mentor/pkg/brain"
 	"github.com/sunrf-renlab-ai/mentor/pkg/ingest"
 	"github.com/sunrf-renlab-ai/mentor/pkg/ipc"
 	"github.com/sunrf-renlab-ai/mentor/pkg/loop"
 	"github.com/sunrf-renlab-ai/mentor/pkg/notify"
+	"github.com/sunrf-renlab-ai/mentor/pkg/oauth"
 	"github.com/sunrf-renlab-ai/mentor/pkg/rules"
 	"github.com/sunrf-renlab-ai/mentor/pkg/state"
 )
@@ -69,8 +73,16 @@ func Start() (*Daemon, error) {
 
 	n := notify.New()
 	reg := action.NewRegistry(n)
-	// Brain stays nil for v0.1 (no OAuth wired). Loop degrades to direct notify.
-	var brn loop.Decider = nil
+
+	// Brain wiring: try to construct one if `claude` is on PATH. If not found,
+	// brain stays nil and loop degrades to direct notify on rule trigger.
+	var brn loop.Decider
+	if claudePath, err := exec.LookPath("claude"); err == nil {
+		authEnv, _ := oauth.LoadAuthEnv() // nil if no token; subprocess inherits user's claude auth
+		brn = brain.New(claudePath, authEnv)
+		reg.Register("spawn_session", &action.SpawnExec{ClaudePath: claudePath, AuthEnv: authEnv})
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	l := loop.New(st, rules.All(), brn, reg)
 	l.Start(ctx)
