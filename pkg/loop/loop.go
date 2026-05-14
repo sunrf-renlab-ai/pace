@@ -48,10 +48,25 @@ type DeciderInput struct {
 // Decision is what brain emits. For multi-action ticks brain emits
 // Decision{Decision:"batch"} and the actual list lives in Params["actions"]
 // as a slice of {decision, rationale, params} maps.
+//
+// v0.8 adds Usage and ToolsUsed — populated by the brain after running its
+// claude subprocess so the daemon can audit-log what brain actually saw.
 type Decision struct {
 	Decision  string         `json:"decision"`
 	Rationale string         `json:"rationale"`
 	Params    map[string]any `json:"params"`
+
+	// Telemetry from the brain run (not part of the wire JSON the LLM emits).
+	Usage     *TokenUsage `json:"-"`
+	ToolsUsed []string    `json:"-"`
+}
+
+// TokenUsage is per-call token telemetry summed across all assistant messages.
+type TokenUsage struct {
+	InputTokens      int64
+	OutputTokens     int64
+	CacheReadTokens  int64
+	CacheWriteTokens int64
 }
 
 type Loop struct {

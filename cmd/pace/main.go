@@ -62,7 +62,7 @@ func main() {
 	case "consult":
 		runConsult(os.Args[2:])
 	case "version":
-		fmt.Println("pace v0.7.0")
+		fmt.Println("pace v0.8.0")
 	case "help", "-h", "--help":
 		printHelp()
 	default:

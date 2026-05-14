@@ -11,7 +11,7 @@
 
 Everything is logged. Anything can be undone.
 
-**Status:** alpha (v0.7). **No hardcoded rules. Event-driven, not polling. Brain sees full payloads (no truncation). Hooks fail loud (no silent loss).** Hook events nudge the brain through a debouncer (5s quiet window, 30s max-wait), so brain reacts ~5 seconds after the last event in a burst rather than waiting for a 90s tick. A 30-min strategic safety tick still fires brain even on quiet days. Per-project goals + focus + plans. Two-pass adversarial mentor mode for code review opinions you can ack or dismiss. OAuth login optional — Pace inherits your existing `claude` CLI auth via subprocess.
+**Status:** alpha (v0.8). **Brain runs Claude in streaming mode with tool access** (Read/Glob/Bash) — `pace review` and `pace consult` now actually read your code while reviewing. **No hardcoded rules. Event-driven, not polling. Brain sees full hook payloads. Hooks fail loud.** Hook events nudge brain through a 5s debouncer (30s max-wait); a 30-min strategic safety tick fires brain on quiet days. Per-project goals + focus + plans. Two-pass adversarial mentor mode. OAuth login optional — Pace inherits your existing `claude` CLI auth via subprocess. Per-call token usage + tool-name audit trail recorded for every brain run.
 
 ---
 
